@@ -2,8 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Receipt Wizard",
-  description: "The Silent Ledger — Upload, edit, regenerate.",
+  title: "Le Image",
+  description: "AI-powered image editing",
+  openGraph: {
+    title: "Le Image",
+    description: "AI-powered image editing",
+    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
+  },
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { InferenceClient } from "@huggingface/inference";
+import { GoogleGenAI } from "@google/genai";
 import { cleanImage, getImageDimensions } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
-const hf = new InferenceClient(process.env.HF_TOKEN ?? "");
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY ?? "" });
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,38 +28,25 @@ export async function POST(req: NextRequest) {
     const { width, height } = await getImageDimensions(rawBuffer);
     const cleaned = await cleanImage(rawBuffer);
 
-    // Convert to base64 for the vision model
     const base64Image = cleaned.buffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64Image}`;
 
-    // Call Qwen2.5-VL for OCR via chat completion
-    const response = await hf.chatCompletion({
-      model: "Qwen/Qwen2.5-VL-7B-Instruct",
-      provider: "nebius",
-      messages: [
-        {
-          role: "system",
-          content: buildOCRSystemPrompt(),
-        },
+    // Call Gemini 2.0 Flash for OCR
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
         {
           role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: dataUrl },
-            },
-            {
-              type: "text",
-              text: "Extract all text from this receipt with bounding boxes. Return ONLY a JSON array.",
-            },
+          parts: [
+            { text: buildOCRSystemPrompt() },
+            { inlineData: { mimeType: "image/jpeg", data: base64Image } },
+            { text: "Extract all text from this receipt with bounding boxes. Return ONLY a JSON array." },
           ],
         },
       ],
-      max_tokens: 4096,
-      temperature: 0.1,
     });
 
-    const rawText = response.choices?.[0]?.message?.content ?? "[]";
+    const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
 
     // Parse the JSON response — strip markdown fences if present
     let jsonStr = rawText.trim();

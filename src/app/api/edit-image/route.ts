@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { InferenceClient } from "@huggingface/inference";
+import { GoogleGenAI } from "@google/genai";
 import { cleanImage } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import type { OCRResult, EditRequest } from "@/types/receipt";
 
-const hf = new InferenceClient(process.env.HF_TOKEN ?? "");
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,36 +25,44 @@ export async function POST(req: NextRequest) {
     // Run Silent Ledger reconciliation
     const ledgerResult = reconcile(body.ocrResult, body.edits);
 
-    // Build descriptive prompt for FLUX.1 Kontext
+    // Build descriptive prompt for Gemini image editing
     const prompt = buildEditPrompt(body.edits, ledgerResult);
 
-    // Extract image buffer from data URL
     const base64Data = body.imageUrl.replace(/^data:image\/\w+;base64,/, "");
-    const imageBuffer = Buffer.from(base64Data, "base64");
-    const imageBlob = new Blob([imageBuffer], { type: "image/jpeg" });
 
-    // Call FLUX.1 Kontext [dev] via fal-ai provider for image editing
-    const resultBlob = await hf.imageToImage({
-      model: "black-forest-labs/FLUX.1-Kontext-dev",
-      provider: "fal-ai",
-      inputs: imageBlob,
-      parameters: {
-        prompt,
-        strength: 0.75,
-        num_inference_steps: 28,
-        guidance_scale: 7.5,
+    // Call Gemini for image editing
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ["TEXT", "IMAGE"],
       },
     });
 
+    // Extract the generated image from response
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find((p: { inlineData?: { data?: string } }) => p.inlineData?.data);
+    if (!imagePart?.inlineData?.data) {
+      return NextResponse.json({ error: "Gemini did not return an edited image" }, { status: 502 });
+    }
+
     // Clean the result image (strip EXIF)
-    const resultBuffer = Buffer.from(await resultBlob.arrayBuffer());
+    const resultBuffer = Buffer.from(imagePart.inlineData.data, "base64");
     const cleaned = await cleanImage(resultBuffer);
     const editedDataUrl = `data:image/jpeg;base64,${cleaned.buffer.toString("base64")}`;
 
     return NextResponse.json({
       editedImageUrl: editedDataUrl,
       ledgerResult,
-      prompt, // for debugging
+      prompt,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
