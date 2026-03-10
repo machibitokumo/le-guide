@@ -36,7 +36,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
+    <div style={{ position: "fixed", inset: 0, overflow: "hidden", overscrollBehavior: "none", touchAction: "none" }}>
       {/* Voxel scene background */}
       <iframe
         src="/voxel-bg.html"

@@ -31,9 +31,6 @@ html, body {
   color: var(--foreground);
   font-family: 'JetBrains Mono', monospace;
   height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-  touch-action: pan-x pan-y;
 }
 
 * {
