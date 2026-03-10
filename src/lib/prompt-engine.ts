@@ -1,4 +1,3 @@
-const ANGLES = ['straight-on', 'slight tilt to the left', 'slight tilt to the right', 'slight perspective from above'];
 const SURFACES = ['light wood table', 'white desk', 'dark countertop', 'on a grey fabric'];
 const CONDITIONS = ['flat and crisp', 'folded once in the middle', 'slightly crumpled', 'curled at the edges'];
 const LIGHTING = ['warm indoor lighting', 'cool fluorescent light', 'natural daylight from a window', 'slight shadow from the side'];
@@ -20,7 +19,9 @@ export function buildEditPrompt(opts: {
   date: string;
 }): string {
   const aging = getAgingPrompt(opts.date);
-  const variation = `Photo angle: ${pick(ANGLES)}. Background surface: ${pick(SURFACES)}. Paper condition: ${pick(CONDITIONS)}. Lighting: ${pick(LIGHTING)}.`;
+  const surfacePart = Math.random() > 0.5 ? ` Background surface: ${pick(SURFACES)}.` : '';
+  const lightingPart = Math.random() > 0.5 ? ` Lighting: ${pick(LIGHTING)}.` : '';
+  const variation = `Paper condition: ${pick(CONDITIONS)}.${surfacePart}${lightingPart}`;
   const targetStr = opts.targetTotal.toFixed(2);
 
   return `You are a receipt image editor.
