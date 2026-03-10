@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { cleanImage } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
-import type { OCRResult, EditRequest } from "@/types/receipt";
+import type { OCRResult } from "@/types/receipt";
 
 if (!process.env.leguide_GEMINI_API_KEY) {
   throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
@@ -15,21 +15,22 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as {
       imageUrl: string; // base64 data URL
       ocrResult: OCRResult;
-      edits: EditRequest[];
+      targetTotal: number;
+      date: string; // YYYY-MM-DD
     };
 
-    if (!body.imageUrl || !body.ocrResult || !body.edits?.length) {
+    if (!body.imageUrl || !body.ocrResult || !body.targetTotal || !body.date) {
       return NextResponse.json(
-        { error: "Missing imageUrl, ocrResult, or edits" },
+        { error: "Missing imageUrl, ocrResult, targetTotal, or date" },
         { status: 400 }
       );
     }
 
-    // Run Silent Ledger reconciliation
-    const ledgerResult = reconcile(body.ocrResult, body.edits);
+    // Reconcile VAT and totals from target
+    const ledgerResult = reconcile(body.ocrResult, body.targetTotal);
 
-    // Build descriptive prompt for Gemini image editing
-    const prompt = buildEditPrompt(body.edits, ledgerResult);
+    // Build prompt with VAT rules and quantity adjustment strategy
+    const prompt = buildEditPrompt({ targetTotal: body.targetTotal, date: body.date });
 
     const base64Data = body.imageUrl.replace(/^data:image\/\w+;base64,/, "");
 

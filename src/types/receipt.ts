@@ -23,10 +23,9 @@ export interface OCRResult {
   imageHeight: number;
 }
 
-export interface EditRequest {
-  itemId: string;
-  originalValue: number;
-  newValue: number;
+export interface TargetRequest {
+  targetTotal: number;
+  date: string; // YYYY-MM-DD
 }
 
 export type VATRate = 25 | 12 | 6;
@@ -49,7 +48,7 @@ export type PipelineState =
   | { step: "idle" }
   | { step: "uploading" }
   | { step: "processing"; progress?: number }
-  | { step: "editing"; ocrResult: OCRResult; imageUrl: string }
-  | { step: "generating"; edits: EditRequest[] }
+  | { step: "targeting"; ocrResult: OCRResult; imageUrl: string }
+  | { step: "generating"; targetTotal: number; date: string }
   | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
   | { step: "error"; message: string; previousStep?: string };

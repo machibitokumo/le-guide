@@ -1,16 +1,15 @@
 "use client";
 
-import { useReducer } from "react";
-import type { PipelineState, OCRResult, EditRequest, LedgerResult } from "@/types/receipt";
+import { useReducer, useState } from "react";
+import type { PipelineState, OCRResult, LedgerResult } from "@/types/receipt";
 import UploadZone from "./UploadZone";
-import ReceiptEditor from "./ReceiptEditor";
 import FooterActions from "./FooterActions";
 
 type Action =
   | { type: "UPLOAD_START" }
   | { type: "UPLOAD_ERROR"; message: string }
   | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string }
-  | { type: "GENERATE_START"; edits: EditRequest[] }
+  | { type: "GENERATE_START"; targetTotal: number; date: string }
   | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
   | { type: "ERROR"; message: string }
   | { type: "RESTART" };
@@ -22,9 +21,9 @@ function reducer(state: PipelineState, action: Action): PipelineState {
     case "UPLOAD_ERROR":
       return { step: "error", message: action.message, previousStep: "idle" };
     case "OCR_COMPLETE":
-      return { step: "editing", ocrResult: action.ocrResult, imageUrl: action.imageUrl };
+      return { step: "targeting", ocrResult: action.ocrResult, imageUrl: action.imageUrl };
     case "GENERATE_START":
-      return { step: "generating", edits: action.edits };
+      return { step: "generating", targetTotal: action.targetTotal, date: action.date };
     case "GENERATE_COMPLETE":
       return {
         step: "done",
@@ -43,9 +42,8 @@ function reducer(state: PipelineState, action: Action): PipelineState {
 
 const STEP_LABELS: Record<string, string> = {
   idle: "Upload a receipt",
-  uploading: "Uploading...",
-  processing: "Analyzing receipt...",
-  editing: "Edit prices",
+  uploading: "Analyzing receipt...",
+  targeting: "Set target",
   generating: "Generating edited receipt...",
   done: "Done",
   error: "Error",
@@ -53,6 +51,8 @@ const STEP_LABELS: Record<string, string> = {
 
 export default function ReceiptWizard() {
   const [state, dispatch] = useReducer(reducer, { step: "idle" });
+  const [targetTotal, setTargetTotal] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const handleUpload = async (file: File) => {
     dispatch({ type: "UPLOAD_START" });
@@ -85,21 +85,19 @@ export default function ReceiptWizard() {
     }
   };
 
-  const handleSubmitEdits = async (edits: EditRequest[]) => {
-    if (state.step !== "editing") return;
-    const { ocrResult, imageUrl } = state;
+  const handleGenerate = async () => {
+    if (state.step !== "targeting") return;
+    const total = parseFloat(targetTotal.replace(",", "."));
+    if (isNaN(total) || total <= 0) return;
 
-    dispatch({ type: "GENERATE_START", edits });
+    const { ocrResult, imageUrl } = state;
+    dispatch({ type: "GENERATE_START", targetTotal: total, date });
 
     try {
       const res = await fetch("/api/edit-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl,
-          ocrResult,
-          edits,
-        }),
+        body: JSON.stringify({ imageUrl, ocrResult, targetTotal: total, date }),
       });
 
       if (!res.ok) {
@@ -122,19 +120,21 @@ export default function ReceiptWizard() {
     }
   };
 
-  const handleRestart = () => dispatch({ type: "RESTART" });
+  const handleRestart = () => {
+    setTargetTotal("");
+    setDate(new Date().toISOString().slice(0, 10));
+    dispatch({ type: "RESTART" });
+  };
 
-  // Progress steps
-  const steps = ["upload", "analyze", "edit", "generate", "done"];
+  const steps = ["upload", "analyze", "target", "generate", "done"];
   const currentStepIndex = {
     idle: 0,
-    uploading: 0,
-    processing: 1,
-    editing: 2,
+    uploading: 1,
+    targeting: 2,
     generating: 3,
     done: 4,
     error: -1,
-  }[state.step];
+  }[state.step] ?? 0;
 
   return (
     <div className="space-y-8">
@@ -181,13 +181,48 @@ export default function ReceiptWizard() {
         <UploadZone onUpload={handleUpload} />
       )}
 
-      {/* Editing */}
-      {state.step === "editing" && (
-        <ReceiptEditor
-          ocrResult={state.ocrResult}
-          imageUrl={state.imageUrl}
-          onSubmitEdits={handleSubmitEdits}
-        />
+      {/* Targeting */}
+      {state.step === "targeting" && (
+        <div className="w-full max-w-md mx-auto space-y-6">
+          <img
+            src={state.imageUrl}
+            alt="Uploaded receipt"
+            className="w-full rounded-lg opacity-70"
+          />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-foreground/50 font-mono mb-1">
+                Target total
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g. 349.90"
+                value={targetTotal}
+                onChange={e => setTargetTotal(e.target.value)}
+                className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground/50 font-mono mb-1">
+                Receipt date
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            <button
+              onClick={handleGenerate}
+              disabled={!targetTotal || !date}
+              className="w-full py-3 rounded-lg bg-accent text-background text-sm font-mono font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            >
+              Generate edited receipt
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Done */}
@@ -214,7 +249,7 @@ export default function ReceiptWizard() {
 
           {state.ledgerResult.warnings.length > 0 && (
             <div className="w-full max-w-2xl mx-auto bg-warning/10 rounded-lg p-3">
-              <p className="text-xs text-warning font-mono mb-1">Ledger adjustments:</p>
+              <p className="text-xs text-warning font-mono mb-1">Ledger summary:</p>
               {state.ledgerResult.warnings.map((w, i) => (
                 <p key={i} className="text-xs text-foreground/60">{w}</p>
               ))}

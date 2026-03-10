@@ -1,43 +1,49 @@
-import type { OCRItem, EditRequest, LedgerResult, BoundingBox } from "@/types/receipt";
+const ANGLES = ['straight-on', 'slight tilt to the left', 'slight tilt to the right', 'slight perspective from above'];
+const SURFACES = ['light wood table', 'white desk', 'dark countertop', 'on a grey fabric'];
+const CONDITIONS = ['flat and crisp', 'folded once in the middle', 'slightly crumpled', 'curled at the edges'];
+const LIGHTING = ['warm indoor lighting', 'cool fluorescent light', 'natural daylight from a window', 'slight shadow from the side'];
 
-function positionHint(box: BoundingBox): string {
-  const vertical = box.y < 0.33 ? "top" : box.y < 0.66 ? "middle" : "bottom";
-  const horizontal = box.x < 0.33 ? "left" : box.x < 0.66 ? "center" : "right";
-  return `${vertical}-${horizontal}`;
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function formatValue(value: number): string {
-  return value.toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function getAgingPrompt(receiptDate: string): string {
+  const age = Math.floor((Date.now() - new Date(receiptDate).getTime()) / 86400000);
+  if (age <= 7) return 'The receipt paper is fresh and crisp, bright white, ink is sharp and dark.';
+  if (age <= 28) return 'The receipt paper has slight yellowing at the edges, one subtle fold line across the middle, ink is still clear.';
+  if (age <= 90) return 'The receipt paper is noticeably yellowed, has multiple fold lines, slight crumpling, ink is starting to fade slightly.';
+  return 'The receipt paper is heavily yellowed, well-worn with many fold creases, ink is faded and partially illegible in places, paper feels thin and fragile.';
 }
 
-export function buildEditPrompt(
-  edits: EditRequest[],
-  ledger: LedgerResult,
-): string {
-  const editDescriptions = edits.map(edit => {
-    const adjustedItem = ledger.adjustedItems.find(i => i.id === edit.itemId);
-    if (!adjustedItem) return "";
+export function buildEditPrompt(opts: {
+  targetTotal: number;
+  date: string;
+}): string {
+  const aging = getAgingPrompt(opts.date);
+  const variation = `Photo angle: ${pick(ANGLES)}. Background surface: ${pick(SURFACES)}. Paper condition: ${pick(CONDITIONS)}. Lighting: ${pick(LIGHTING)}.`;
+  const targetStr = opts.targetTotal.toFixed(2);
 
-    const position = positionHint(adjustedItem.boundingBox);
-    return `The price in the ${position} area of the receipt now reads "${formatValue(edit.newValue)}" instead of "${formatValue(edit.originalValue)}".`;
-  }).filter(Boolean);
+  return `You are a receipt image editor.
 
-  const totalDescription = `The total at the bottom of the receipt now shows "${formatValue(ledger.newTotal)}".`;
+TASK: Edit this receipt photo. Change ONLY these values:
+- Total/sum: change to ${targetStr}
+- Date: change to ${opts.date}
 
-  const vatDescriptions = ledger.vatBreakdown.map(vat =>
-    `The VAT amount (${vat.rate}%) is now "${formatValue(vat.vat)}" on a net of "${formatValue(vat.net)}".`
-  );
+CRITICAL RULES FOR ADJUSTING THE TOTAL:
+1. NEVER add random new products that don't exist on the original receipt.
+2. Keep all original items from the receipt image — do NOT remove any.
+3. To reach the target total, INCREASE THE QUANTITY of existing items. For example: change "1x Milk" to "3x Milk".
+4. Keep the same unit prices — only change quantities.
+5. For gas station receipts: increase the number of liters (e.g. 10L → 50L) rather than adding products.
+6. The final total MUST exactly match ${targetStr} — adjust the last item's quantity by a small amount if needed to land on the exact target.
+7. Use realistic retail prices (19.90, 34.50 — not round numbers like 20.00).
+8. Apply VAT rules (25%, 12%, 6%) to each item — food items are typically 12%, books/transport 6%, everything else 25%.
 
-  const parts = [
-    "This is a photograph of a receipt.",
-    ...editDescriptions,
-    totalDescription,
-    ...vatDescriptions,
-    "All other text, logos, formatting, and layout remain exactly as they appear in the original photograph.",
-    "The receipt looks natural and unedited.",
-  ];
-
-  return parts.join(" ");
+VISUAL RULES:
+- Keep the EXACT same receipt layout, merchant branding, and font style.
+- ${aging}
+- ${variation}
+- The result must look like a natural, unedited receipt photo.`;
 }
 
 export function buildOCRSystemPrompt(): string {
