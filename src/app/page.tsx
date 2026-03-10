@@ -5,12 +5,34 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.push("/app");
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!res.ok) {
+        setError("Invalid credentials");
+        return;
+      }
+
+      router.push("/app");
+    } catch {
+      setError("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -68,7 +90,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Email */}
+          {/* Username */}
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <label style={{
               color: "rgba(252, 249, 238, 0.45)",
@@ -76,14 +98,16 @@ export default function LoginPage() {
               fontSize: "0.68rem",
               letterSpacing: "0.08em",
             }}>
-              EMAIL
+              USERNAME
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
               style={{
                 background: "rgba(252, 249, 238, 0.06)",
                 border: "1px solid rgba(252, 249, 238, 0.14)",
@@ -126,12 +150,26 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* Error */}
+          {error && (
+            <p style={{
+              color: "#ef4444",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "0.72rem",
+              textAlign: "center",
+              margin: 0,
+            }}>
+              {error}
+            </p>
+          )}
+
           {/* Submit */}
           <button
             type="submit"
+            disabled={loading}
             style={{
               marginTop: "4px",
-              background: "#fcf9ee",
+              background: loading ? "rgba(252, 249, 238, 0.5)" : "#fcf9ee",
               color: "#112338",
               border: "none",
               borderRadius: "8px",
@@ -140,10 +178,10 @@ export default function LoginPage() {
               fontSize: "0.82rem",
               fontWeight: 600,
               letterSpacing: "0.06em",
-              cursor: "pointer",
+              cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            ENTER
+            {loading ? "..." : "ENTER"}
           </button>
         </form>
       </div>
