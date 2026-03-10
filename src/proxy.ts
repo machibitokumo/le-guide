@@ -24,7 +24,7 @@ async function verifySession(token: string): Promise<boolean> {
   return crypto.subtle.verify("HMAC", key, sigBytes, dataBytes);
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const token = req.cookies.get("session")?.value;
 
   if (!token || !(await verifySession(token))) {
