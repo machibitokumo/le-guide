@@ -28,6 +28,19 @@ export interface TargetRequest {
   date: string; // YYYY-MM-DD
 }
 
+export interface StructuredItem {
+  name: string;
+  type: "A" | "B"; // A = has "N st x price" line, B = price only
+  unitPrice: number;
+  currentQty?: number; // Type A only
+  currentPrice: number;
+  qtyUnit?: string; // "st", "l", "kg" etc
+}
+
+export interface ReceiptStructure {
+  items: StructuredItem[];
+}
+
 export type VATRate = 25 | 12 | 6;
 
 export interface VATBreakdown {
@@ -48,7 +61,7 @@ export type PipelineState =
   | { step: "idle" }
   | { step: "uploading" }
   | { step: "processing"; progress?: number }
-  | { step: "targeting"; ocrResult: OCRResult; imageUrl: string }
+  | { step: "targeting"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
   | { step: "generating"; targetTotal: number; date: string }
   | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
   | { step: "error"; message: string; previousStep?: string };

@@ -31,6 +31,8 @@ html, body {
   color: var(--foreground);
   font-family: 'JetBrains Mono', monospace;
   height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 * {

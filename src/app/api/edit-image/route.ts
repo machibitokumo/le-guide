@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { cleanImage } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
-import type { OCRResult } from "@/types/receipt";
+import type { OCRResult, ReceiptStructure } from "@/types/receipt";
 
 if (!process.env.leguide_GEMINI_API_KEY) {
   throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
@@ -13,8 +13,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.leguide_GEMINI_API_KEY });
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
-      imageUrl: string; // base64 data URL
+      imageUrl: string;
       ocrResult: OCRResult;
+      receiptStructure: ReceiptStructure;
       targetTotal: number;
       date: string; // YYYY-MM-DD
     };
@@ -29,8 +30,12 @@ export async function POST(req: NextRequest) {
     // Reconcile VAT and totals from target
     const ledgerResult = reconcile(body.ocrResult, body.targetTotal);
 
-    // Build prompt with VAT rules and quantity adjustment strategy
-    const prompt = buildEditPrompt({ targetTotal: body.targetTotal, date: body.date });
+    // Build prompt with receipt structure so model knows exactly what it can edit
+    const prompt = buildEditPrompt({
+      targetTotal: body.targetTotal,
+      date: body.date,
+      receiptStructure: body.receiptStructure,
+    });
 
     const base64Data = body.imageUrl.replace(/^data:image\/\w+;base64,/, "");
 

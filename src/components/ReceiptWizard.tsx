@@ -1,14 +1,14 @@
 "use client";
 
 import { useReducer, useState } from "react";
-import type { PipelineState, OCRResult, LedgerResult } from "@/types/receipt";
+import type { PipelineState, OCRResult, LedgerResult, ReceiptStructure } from "@/types/receipt";
 import UploadZone from "./UploadZone";
 import FooterActions from "./FooterActions";
 
 type Action =
   | { type: "UPLOAD_START" }
   | { type: "UPLOAD_ERROR"; message: string }
-  | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string }
+  | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
   | { type: "GENERATE_START"; targetTotal: number; date: string }
   | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
   | { type: "ERROR"; message: string }
@@ -21,7 +21,7 @@ function reducer(state: PipelineState, action: Action): PipelineState {
     case "UPLOAD_ERROR":
       return { step: "error", message: action.message, previousStep: "idle" };
     case "OCR_COMPLETE":
-      return { step: "targeting", ocrResult: action.ocrResult, imageUrl: action.imageUrl };
+      return { step: "targeting", ocrResult: action.ocrResult, imageUrl: action.imageUrl, receiptStructure: action.receiptStructure };
     case "GENERATE_START":
       return { step: "generating", targetTotal: action.targetTotal, date: action.date };
     case "GENERATE_COMPLETE":
@@ -49,7 +49,11 @@ const STEP_LABELS: Record<string, string> = {
   error: "Error",
 };
 
-export default function ReceiptWizard() {
+interface ReceiptWizardProps {
+  onGenerated?: (targetTotal: number) => void;
+}
+
+export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const [state, dispatch] = useReducer(reducer, { step: "idle" });
   const [targetTotal, setTargetTotal] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -76,6 +80,7 @@ export default function ReceiptWizard() {
         type: "OCR_COMPLETE",
         ocrResult: data.ocr,
         imageUrl: data.imageUrl,
+        receiptStructure: data.receiptStructure,
       });
     } catch (err) {
       dispatch({
@@ -90,14 +95,14 @@ export default function ReceiptWizard() {
     const total = parseFloat(targetTotal.replace(",", "."));
     if (isNaN(total) || total <= 0) return;
 
-    const { ocrResult, imageUrl } = state;
+    const { ocrResult, imageUrl, receiptStructure } = state;
     dispatch({ type: "GENERATE_START", targetTotal: total, date });
 
     try {
       const res = await fetch("/api/edit-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, ocrResult, targetTotal: total, date }),
+        body: JSON.stringify({ imageUrl, ocrResult, receiptStructure, targetTotal: total, date }),
       });
 
       if (!res.ok) {
@@ -112,6 +117,7 @@ export default function ReceiptWizard() {
         ledgerResult: data.ledgerResult,
         originalImageUrl: imageUrl,
       });
+      onGenerated?.(total);
     } catch (err) {
       dispatch({
         type: "ERROR",

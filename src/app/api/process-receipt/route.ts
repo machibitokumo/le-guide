@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { cleanImage, getImageDimensions } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
+import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
@@ -95,9 +96,12 @@ export async function POST(req: NextRequest) {
       imageHeight: height,
     };
 
-    // Return OCR result + cleaned image as base64 data URL
+    const receiptStructure = await analyzeReceiptStructure(ocrResult);
+
+    // Return OCR result + structure + cleaned image as base64 data URL
     return NextResponse.json({
       ocr: ocrResult,
+      receiptStructure,
       imageUrl: dataUrl,
     });
   } catch (err) {

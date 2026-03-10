@@ -1,3 +1,5 @@
+import type { ReceiptStructure } from "@/types/receipt";
+
 const SURFACES = ['light wood table', 'white desk', 'dark countertop', 'on a grey fabric'];
 const CONDITIONS = ['flat and crisp', 'folded once in the middle', 'slightly crumpled', 'curled at the edges'];
 const LIGHTING = ['warm indoor lighting', 'cool fluorescent light', 'natural daylight from a window', 'slight shadow from the side'];
@@ -14,31 +16,58 @@ function getAgingPrompt(receiptDate: string): string {
   return 'The receipt paper is heavily yellowed, well-worn with many fold creases, ink is faded and partially illegible in places, paper feels thin and fragile.';
 }
 
+function buildItemMap(structure: ReceiptStructure): string {
+  if (!structure?.items?.length) return "";
+
+  const lines = structure.items.map(item => {
+    if (item.type === "A") {
+      return `- ${item.name}: Type A — has quantity sub-line. Currently ${item.currentQty} ${item.qtyUnit ?? "st"} × ${item.unitPrice.toFixed(2)} = ${item.currentPrice.toFixed(2)}. EDIT: change the quantity integer on the existing sub-line (e.g. "${item.currentQty} ${item.qtyUnit ?? "st"} x ${item.unitPrice.toFixed(2)}" → "N ${item.qtyUnit ?? "st"} x ${item.unitPrice.toFixed(2)}"). N must be a whole integer. Update the line total to N × ${item.unitPrice.toFixed(2)}. Do NOT duplicate the item name.`;
+    }
+    return `- ${item.name}: Type B — no quantity sub-line. Current price: ${item.currentPrice.toFixed(2)}. EDIT: change only the price value in place. Do NOT add a quantity sub-line (receipt must not grow taller).`;
+  });
+
+  return `\nITEM MAP (derived from OCR — use this as your editing guide):\n${lines.join("\n")}`;
+}
+
 export function buildEditPrompt(opts: {
   targetTotal: number;
   date: string;
+  receiptStructure?: ReceiptStructure;
 }): string {
   const aging = getAgingPrompt(opts.date);
   const surfacePart = Math.random() > 0.5 ? ` Background surface: ${pick(SURFACES)}.` : '';
   const lightingPart = Math.random() > 0.5 ? ` Lighting: ${pick(LIGHTING)}.` : '';
   const variation = `Paper condition: ${pick(CONDITIONS)}.${surfacePart}${lightingPart}`;
   const targetStr = opts.targetTotal.toFixed(2);
+  const itemMap = opts.receiptStructure ? buildItemMap(opts.receiptStructure) : "";
 
   return `You are a receipt image editor.
 
 TASK: Edit this receipt photo. Change ONLY these values:
 - Total/sum: change to ${targetStr}
 - Date: change to ${opts.date}
+${itemMap}
 
 CRITICAL RULES FOR ADJUSTING THE TOTAL:
-1. NEVER add random new products that don't exist on the original receipt.
-2. Keep all original items from the receipt image — do NOT remove any.
-3. To reach the target total, INCREASE THE QUANTITY of existing items. For example: change "1x Milk" to "3x Milk".
-4. Keep the same unit prices — only change quantities.
-5. For gas station receipts: increase the number of liters (e.g. 10L → 50L) rather than adding products.
-6. The final total MUST exactly match ${targetStr} — adjust the last item's quantity by a small amount if needed to land on the exact target.
-7. Use realistic retail prices (19.90, 34.50 — not round numbers like 20.00).
-8. Apply VAT rules (25%, 12%, 6%) to each item — food items are typically 12%, books/transport 6%, everything else 25%.
+1. NEVER add new products, NEVER remove existing products, NEVER add new lines to the receipt.
+2. The receipt MUST stay exactly the same height — no extra lines whatsoever.
+3. There are TWO types of items on receipts — treat them differently:
+
+   TYPE A — Items WITH an existing quantity sub-line (e.g. "2  st x 13,50"):
+   - You MAY increase the quantity number on that sub-line (e.g. "2" → "5")
+   - The quantity MUST be a whole integer — NEVER use decimals (no "6,5 st" or "3.2 st")
+   - Update the line-total price to match: new qty × unit price
+   - Do NOT duplicate the item name — only edit the existing sub-line in place
+
+   TYPE B — Items WITHOUT a quantity sub-line (just a name and a price):
+   - Do NOT add a quantity sub-line — that would make the receipt taller
+   - Instead, increase the unit price directly on the existing price field
+   - Keep the price realistic (e.g. 93,00 → 186,00, not 93,00 → 279,37)
+
+4. For gas station receipts: increase liters on the existing liter line.
+5. The final total MUST exactly match ${targetStr}.
+6. For discrete units (st, stk, pcs): quantities MUST be whole integers — you cannot buy half a package. For weight/volume units (kg, l, g, cl): decimals are valid (e.g. 0,456 kg or 2,5 l).
+7. Keep all existing prices realistic (XX,90 or XX,95 endings — not round numbers).
 
 VISUAL RULES:
 - Keep the EXACT same receipt layout, merchant branding, and font style.
