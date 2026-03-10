@@ -5,7 +5,10 @@ import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY ?? "" });
+if (!process.env.leguide_GEMINI_API_KEY) {
+  throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
+}
+const ai = new GoogleGenAI({ apiKey: process.env.leguide_GEMINI_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {

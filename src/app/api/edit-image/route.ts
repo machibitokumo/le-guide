@@ -5,7 +5,10 @@ import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import type { OCRResult, EditRequest } from "@/types/receipt";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
+if (!process.env.leguide_GEMINI_API_KEY) {
+  throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
+}
+const ai = new GoogleGenAI({ apiKey: process.env.leguide_GEMINI_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
