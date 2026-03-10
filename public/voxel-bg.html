@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Guide - Voxel Art Scene</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #112338; /* Deep nautical blue */
+            font-family: sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fcf9ee;
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+    </style>
+
+    <style>
+      /* Hides common overlay IDs and classes used in Three.js examples and generated code */
+      #info, #loading, #ui, #instructions, .label, .overlay, #description {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+      }
+      /* Ensure the body doesn't show selected text cursor interaction outside canvas */
+      body {
+        user-select: none !important;
+      }
+    </style>
+  </head>
+<body>
+    <div id="loading">GENERATING VOXELS...</div>
+    <div id="canvas-container"></div>
+
+    <!-- Using ES modules via Skypack for clean single-page execution -->
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js';
+
+        // --- SCENE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#112338');
+        scene.fog = new THREE.FogExp2('#112338', 0.002);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        // Position camera to look down slightly at the composition
+        camera.position.set(0, -16, 128);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 300;
+        controls.minDistance = 50;
+        controls.target.set(0, 10, 0);
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight('#4a6582', 0.8);
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight('#ffffff', 1.2);
+        mainLight.position.set(40, 60, 50);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.left = -80;
+        mainLight.shadow.camera.right = 80;
+        mainLight.shadow.camera.top = 80;
+        mainLight.shadow.camera.bottom = -80;
+        mainLight.shadow.bias = -0.001;
+        scene.add(mainLight);
+
+        const fillLight = new THREE.DirectionalLight('#88aaff', 0.5);
+        fillLight.position.set(-50, -20, 30);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight('#fcf9ee', 0.3);
+        rimLight.position.set(0, -50, -50);
+        scene.add(rimLight);
+
+        // --- VOXEL GENERATION LOGIC ---
+        const voxels = [];
+        // Helper to add a voxel coordinate
+        function v(x, y, z) {
+            voxels.push({ x, y, z });
+        }
+
+        const COMPASS_Y_OFFSET = 25;
+        const R_OUTER = 32;
+        const R_INNER = 22;
+        const THICKNESS = 1.2;
+
+        // 1. Compass Rings & Hub
+        for (let x = -40; x <= 40; x++) {
+            for (let y = -40; y <= 40; y++) {
+                let r = Math.sqrt(x * x + y * y);
+                // Outer ring
+                if (Math.abs(r - R_OUTER) < THICKNESS) {
+                    v(x, y + COMPASS_Y_OFFSET, 0); v(x, y + COMPASS_Y_OFFSET, -1);
+                }
+                // Inner ring
+                if (Math.abs(r - R_INNER) < THICKNESS) {
+                    v(x, y + COMPASS_Y_OFFSET, 0); v(x, y + COMPASS_Y_OFFSET, -1);
+                }
+                // Center Hub
+                if (r < 3.5) {
+                    v(x, y + COMPASS_Y_OFFSET, 0); v(x, y + COMPASS_Y_OFFSET, 1);
+                }
+            }
+        }
+
+        // 2. North Arrow (Stylized 3D shape: solid left, hollow right)
+        for (let y = 6; y <= 45; y++) {
+            let halfWidth = (45 - y) / 39 * 10; 
+            let maxHx = Math.floor(halfWidth);
+            let cy = y + COMPASS_Y_OFFSET;
+            
+            // Left side (Solid, stepped for lighting)
+            for (let x = -maxHx; x <= 0; x++) {
+                let depth = Math.max(1, 3 - Math.abs(x) * 0.4);
+                for(let z = 0; z < depth; z++) v(x, cy, z);
+            }
+            
+            // Right side (Outline)
+            if (maxHx > 0) {
+                v(maxHx, cy, 0); v(maxHx, cy, 1);
+            }
+            // Right base
+            if (y === 6) {
+                for (let x = 0; x <= maxHx; x++) {
+                    v(x, cy, 0); v(x, cy, 1);
+                }
+            }
+            // Center Ridge
+            v(0, cy, 0); v(0, cy, 1); v(0, cy, 2);
+        }
+
+        // 3. South Arrow (Smaller, hollow)
+        for (let y = -6; y >= -20; y--) {
+            let halfWidth = (y + 20) / 14 * 5;
+            let w = Math.floor(halfWidth);
+            let cy = y + COMPASS_Y_OFFSET;
+            v(-w, cy, 0); v(w, cy, 0);
+            if (y === -6) {
+                for(let x=-w; x<=w; x++) v(x, cy, 0);
+            }
+            v(0, cy, 0); v(0, cy, 1); 
+        }
+
+        // 4. East & West Arrows
+        for (let x = 6; x <= 20; x++) {
+            let halfWidth = (20 - x) / 14 * 5;
+            let w = Math.floor(halfWidth);
+            v(x, COMPASS_Y_OFFSET - w, 0); v(x, COMPASS_Y_OFFSET + w, 0); // East
+            v(-x, COMPASS_Y_OFFSET - w, 0); v(-x, COMPASS_Y_OFFSET + w, 0); // West
+            if (x === 6) {
+                for(let y=-w; y<=w; y++) {
+                    v(x, COMPASS_Y_OFFSET + y, 0); v(-x, COMPASS_Y_OFFSET + y, 0);
+                }
+            }
+            v(x, COMPASS_Y_OFFSET, 0); v(x, COMPASS_Y_OFFSET, 1);
+            v(-x, COMPASS_Y_OFFSET, 0); v(-x, COMPASS_Y_OFFSET, 1);
+        }
+
+        // 5. Diagonal Markers
+        const diagonals = [{rx: 1, ry: 1}, {rx: -1, ry: 1}, {rx: -1, ry: -1}, {rx: 1, ry: -1}];
+        diagonals.forEach(dir => {
+            let startDist = R_INNER + 2;
+            let endDist = R_OUTER - 2;
+            for(let r = startDist; r <= endDist; r++) {
+                let px = Math.round(r * 0.707 * dir.rx);
+                let py = Math.round(r * 0.707 * dir.ry);
+                v(px, py + COMPASS_Y_OFFSET, 0);
+            }
+            // Arrowheads on outer ring
+            let outX = Math.round((R_OUTER+2) * 0.707 * dir.rx);
+            let outY = Math.round((R_OUTER+2) * 0.707 * dir.ry);
+            v(outX, outY + COMPASS_Y_OFFSET, 0); v(outX, outY + COMPASS_Y_OFFSET, 1);
+        });
+
+        // 6. Mini Letters N, S, E, W
+        function drawMiniLetter(char, cx, cy) {
+            let pts = [];
+            if(char==='N') pts = [[-1,-2],[-1,-1],[-1,0],[-1,1],[-1,2], [0,0], [1,-2],[1,-1],[1,0],[1,1],[1,2]];
+            if(char==='S') pts = [[1,2],[0,2],[-1,2], [-1,1], [-1,0],[0,0],[1,0], [1,-1], [1,-2],[0,-2],[-1,-2]];
+            if(char==='E') pts = [[1,2],[0,2],[-1,2], [-1,1], [-1,0],[0,0], [-1,-1], [-1,-2],[0,-2],[1,-2]];
+            if(char==='W') pts = [[-2,2],[-2,1],[-2,0],[-1,-1],[0,-2],[1,-1],[2,0],[2,1],[2,2], [0,-1]];
+            pts.forEach(p => { v(cx + p[0], cy + p[1] + COMPASS_Y_OFFSET, 0); v(cx + p[0], cy + p[1] + COMPASS_Y_OFFSET, 1); });
+        }
+        drawMiniLetter('N', 0, 52); drawMiniLetter('S', 0, -28);
+        drawMiniLetter('E', 40, 0); drawMiniLetter('W', -40, 0);
+
+        // 7. Typography: "LE GUIDE"
+        const font = {
+            'L': [1,0,0,0,0, 1,0,0,0,0, 1,0,0,0,0, 1,0,0,0,0, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,1],
+            'E': [1,1,1,1,1, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,0, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,1],
+            'G': [0,1,1,1,1, 1,0,0,0,0, 1,0,0,0,0, 1,0,0,1,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+            'U': [1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0],
+            'I': [0,1,1,1,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,1,1,1,0],
+            'D': [1,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,1,1,1,0]
+        };
+
+        function drawWord(word, startX, startY) {
+            let xOffset = startX;
+            for (let i = 0; i < word.length; i++) {
+                let char = word[i].toUpperCase();
+                if (char === ' ') { xOffset += 4; continue; }
+                let pattern = font[char];
+                if (pattern) {
+                    for (let row = 0; row < 7; row++) {
+                        for (let col = 0; col < 5; col++) {
+                            if (pattern[row * 5 + col] === 1) {
+                                v(xOffset + col, startY - row, 0); v(xOffset + col, startY - row, 1);
+                            }
+                        }
+                    }
+                }
+                xOffset += 7;
+            }
+        }
+        drawWord("LE GUIDE", -26, -20);
+
+        // 8. Abstract Stylized Japanese Text ("ル・ガイド")
+        let jpY = -36;
+        // ル
+        v(-20, jpY, 0); v(-20, jpY-1, 0); v(-20, jpY-2, 0); v(-19, jpY-3, 0);
+        v(-16, jpY, 0); v(-16, jpY-1, 0); v(-16, jpY-2, 0); v(-16, jpY-3, 0); v(-16, jpY-4, 0); v(-17, jpY-4, 0);
+        // ・
+        v(-11, jpY-2, 0); v(-11, jpY-2, 1);
+        // ガ
+        v(-5, jpY, 0); v(-4, jpY, 0); v(-3, jpY, 0); v(-2, jpY, 0);
+        v(-4, jpY-1, 0); v(-4, jpY-2, 0); v(-5, jpY-3, 0);
+        v(-2, jpY-1, 0); v(-2, jpY-2, 0); v(-2, jpY-3, 0); v(-1, jpY-3, 0);
+        v(0, jpY+1, 0); v(1, jpY+1, 0); // ten-ten
+        // イ
+        v(5, jpY, 0); v(4, jpY-1, 0); v(3, jpY-2, 0); v(4, jpY-3, 0);
+        v(6, jpY-1, 0); v(6, jpY-2, 0); v(6, jpY-3, 0); v(6, jpY-4, 0);
+        // ド
+        v(11, jpY, 0); v(11, jpY-1, 0); v(11, jpY-2, 0); v(11, jpY-3, 0); v(11, jpY-4, 0);
+        v(11, jpY, 0); v(12, jpY, 0); v(13, jpY, 0); v(14, jpY-1, 0); v(14, jpY-2, 0); v(13, jpY-3, 0); v(12, jpY-3, 0); v(11, jpY-3, 0);
+        v(16, jpY+1, 0); v(17, jpY+1, 0); // ten-ten
+
+        // --- MESH CREATION ---
+        const mainGroup = new THREE.Group();
+        scene.add(mainGroup);
+
+        const voxelGeometry = new THREE.BoxGeometry(1, 1, 1);
+        const voxelMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xfcf9ee, // Cream color from image
+            roughness: 0.6,
+            metalness: 0.1,
+        });
+
+        const instancedMesh = new THREE.InstancedMesh(voxelGeometry, voxelMaterial, voxels.length);
+        instancedMesh.castShadow = true;
+        instancedMesh.receiveShadow = true;
+
+        const dummy = new THREE.Object3D();
+        voxels.forEach((voxel, i) => {
+            dummy.position.set(voxel.x, voxel.y, voxel.z);
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+        });
+        
+        // Tilt the whole composition slightly to enhance 3D feel
+        instancedMesh.rotation.x = -0.10;
+        instancedMesh.rotation.y = 0.05;
+        mainGroup.add(instancedMesh);
+
+        // --- AMBIENT PARTICLES ---
+        const particleCount = 150;
+        const particleGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+        const particleMat = new THREE.MeshStandardMaterial({ 
+            color: 0xfcf9ee, 
+            emissive: 0xfcf9ee, 
+            emissiveIntensity: 0.2 
+        });
+        const particleMesh = new THREE.InstancedMesh(particleGeo, particleMat, particleCount);
+
+        for(let i=0; i<particleCount; i++) {
+            dummy.position.set(
+                (Math.random() - 0.5) * 160,
+                (Math.random() - 0.5) * 160,
+                (Math.random() - 0.5) * 60 - 20
+            );
+            dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+            dummy.scale.setScalar(Math.random() * 0.8 + 0.2);
+            dummy.updateMatrix();
+            particleMesh.setMatrixAt(i, dummy.matrix);
+        }
+        mainGroup.add(particleMesh);
+
+        // Remove loading text
+        document.getElementById('loading').style.opacity = 0;
+
+        // --- ANIMATION & RESIZE ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            // Subtle floating animation
+            mainGroup.position.y = Math.sin(time * 0.5) * 2;
+            mainGroup.rotation.y = Math.sin(time * 0.2) * 0.05;
+
+            // Slowly rotate particles
+            particleMesh.rotation.y = time * 0.02;
+            particleMesh.rotation.x = time * 0.01;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
