@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { OCRResult, EditRequest } from "@/types/receipt";
+import type { OCRResult } from "@/types/receipt";
+
+interface EditRequest {
+  itemId: string;
+  originalValue: number;
+  newValue: number;
+}
 import PriceOverlay from "./PriceOverlay";
 
 interface ReceiptEditorProps {

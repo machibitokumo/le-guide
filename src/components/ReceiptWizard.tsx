@@ -130,6 +130,7 @@ export default function ReceiptWizard() {
   const currentStepIndex = {
     idle: 0,
     uploading: 1,
+    processing: 1,
     targeting: 2,
     generating: 3,
     done: 4,
