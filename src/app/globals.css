@@ -26,11 +26,14 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-body {
+html, body {
   background: var(--background);
   color: var(--foreground);
   font-family: 'JetBrains Mono', monospace;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 * {

@@ -91,7 +91,7 @@ export default function LoginPage() {
                 padding: "10px 14px",
                 color: "#fcf9ee",
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: "0.85rem",
+                fontSize: "16px",
                 outline: "none",
               }}
             />
@@ -120,7 +120,7 @@ export default function LoginPage() {
                 padding: "10px 14px",
                 color: "#fcf9ee",
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: "0.85rem",
+                fontSize: "16px",
                 outline: "none",
               }}
             />
