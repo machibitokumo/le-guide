@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { cleanImage, getImageDimensions } from "@/lib/clean-image";
+import { cleanImage, getImageDimensions, extractExif } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import { createClient } from "@supabase/supabase-js";
@@ -31,7 +31,12 @@ export async function POST(req: NextRequest) {
     }
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
-    const { width, height } = await getImageDimensions(rawBuffer);
+    const [{ width, height }, originalExifBuffer] = await Promise.all([
+      getImageDimensions(rawBuffer),
+      extractExif(rawBuffer),
+    ]);
+    const originalFilename = file.name;
+    const originalExif = originalExifBuffer ? originalExifBuffer.toString("base64") : null;
     const cleaned = await cleanImage(rawBuffer);
 
     const base64Image = cleaned.buffer.toString("base64");
@@ -119,12 +124,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Return OCR result + structure + cleaned image as base64 data URL
+    // Return OCR result + structure + cleaned image + original file identity
     return NextResponse.json({
       ocr: ocrResult,
       receiptStructure,
       imageUrl: dataUrl,
       apiCostUSD,
+      originalFilename,
+      originalExif,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

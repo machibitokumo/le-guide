@@ -8,9 +8,9 @@ import FooterActions from "./FooterActions";
 type Action =
   | { type: "UPLOAD_START" }
   | { type: "UPLOAD_ERROR"; message: string }
-  | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
-  | { type: "GENERATE_START"; targetTotal: number; date: string }
-  | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; targetTotal: number; date: string }
+  | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure; originalFilename: string; originalExif: string | null }
+  | { type: "GENERATE_START"; targetTotal: number; date: string; originalFilename: string; originalExif: string | null }
+  | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; targetTotal: number; date: string; downloadFilename: string }
   | { type: "ERROR"; message: string }
   | { type: "RESTART" }
   | { type: "SET_SAVED" };
@@ -22,9 +22,9 @@ function reducer(state: PipelineState, action: Action): PipelineState {
     case "UPLOAD_ERROR":
       return { step: "error", message: action.message, previousStep: "idle" };
     case "OCR_COMPLETE":
-      return { step: "targeting", ocrResult: action.ocrResult, imageUrl: action.imageUrl, receiptStructure: action.receiptStructure };
+      return { step: "targeting", ocrResult: action.ocrResult, imageUrl: action.imageUrl, receiptStructure: action.receiptStructure, originalFilename: action.originalFilename, originalExif: action.originalExif };
     case "GENERATE_START":
-      return { step: "generating", targetTotal: action.targetTotal, date: action.date };
+      return { step: "generating", targetTotal: action.targetTotal, date: action.date, originalFilename: action.originalFilename, originalExif: action.originalExif };
     case "GENERATE_COMPLETE":
       return {
         step: "done",
@@ -33,6 +33,7 @@ function reducer(state: PipelineState, action: Action): PipelineState {
         originalImageUrl: action.originalImageUrl,
         targetTotal: action.targetTotal,
         date: action.date,
+        downloadFilename: action.downloadFilename,
         saved: false,
       };
     case "ERROR":
@@ -91,6 +92,8 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
         ocrResult: data.ocr,
         imageUrl: data.imageUrl,
         receiptStructure: data.receiptStructure,
+        originalFilename: data.originalFilename ?? file.name,
+        originalExif: data.originalExif ?? null,
       });
     } catch (err) {
       dispatch({
@@ -105,14 +108,14 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
     const total = parseFloat(targetTotal.replace(",", "."));
     if (isNaN(total) || total <= 0) return;
 
-    const { ocrResult, imageUrl, receiptStructure } = state;
-    dispatch({ type: "GENERATE_START", targetTotal: total, date });
+    const { ocrResult, imageUrl, receiptStructure, originalFilename, originalExif } = state;
+    dispatch({ type: "GENERATE_START", targetTotal: total, date, originalFilename, originalExif });
 
     try {
       const res = await fetch("/api/edit-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, ocrResult, receiptStructure, targetTotal: total, date }),
+        body: JSON.stringify({ imageUrl, ocrResult, receiptStructure, targetTotal: total, date, originalFilename, originalExif }),
       });
 
       if (!res.ok) {
@@ -128,6 +131,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
         originalImageUrl: imageUrl,
         targetTotal: total,
         date,
+        downloadFilename: data.downloadFilename ?? originalFilename,
       });
       onGenerated?.(total, ocrCostRef.current + (data.apiCostUSD ?? 0));
     } catch (err) {
@@ -331,6 +335,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
             editedImageUrl={state.editedImageUrl}
             ledgerResult={state.ledgerResult}
             onRestart={handleRestart}
+            downloadFilename={state.downloadFilename}
           />
         </div>
       )}

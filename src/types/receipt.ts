@@ -61,7 +61,7 @@ export type PipelineState =
   | { step: "idle" }
   | { step: "uploading" }
   | { step: "processing"; progress?: number }
-  | { step: "targeting"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
-  | { step: "generating"; targetTotal: number; date: string }
-  | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; saved: boolean; targetTotal: number; date: string }
+  | { step: "targeting"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure; originalFilename: string; originalExif: string | null }
+  | { step: "generating"; targetTotal: number; date: string; originalFilename: string; originalExif: string | null }
+  | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; saved: boolean; targetTotal: number; date: string; downloadFilename: string }
   | { step: "error"; message: string; previousStep?: string };

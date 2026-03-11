@@ -6,6 +6,7 @@ interface FooterActionsProps {
   editedImageUrl: string;
   ledgerResult: LedgerResult;
   onRestart: () => void;
+  downloadFilename?: string;
 }
 
 async function copyImageToClipboard(dataUrl: string) {
@@ -28,6 +29,7 @@ export default function FooterActions({
   editedImageUrl,
   ledgerResult,
   onRestart,
+  downloadFilename = "receipt-edited.jpg",
 }: FooterActionsProps) {
   const logDownload = () => {
     fetch("/api/log", {
@@ -55,7 +57,7 @@ export default function FooterActions({
         Copy image
       </button>
       <button
-        onClick={() => { downloadImage(editedImageUrl, "receipt-edited.jpg"); logDownload(); }}
+        onClick={() => { downloadImage(editedImageUrl, downloadFilename); logDownload(); }}
         className="flex-1 min-w-[120px] py-2.5 px-4 rounded-lg bg-muted hover:bg-border text-sm font-mono transition-colors"
       >
         Download image

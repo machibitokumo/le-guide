@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { cleanImage } from "@/lib/clean-image";
+import { cleanImage, injectExif } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import type { OCRResult, ReceiptStructure } from "@/types/receipt";
@@ -20,6 +20,8 @@ export async function POST(req: NextRequest) {
       receiptStructure: ReceiptStructure;
       targetTotal: number;
       date: string; // YYYY-MM-DD
+      originalFilename: string;
+      originalExif: string | null;
     };
 
     if (!body.imageUrl || !body.ocrResult || !body.targetTotal || !body.date) {
@@ -69,10 +71,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Gemini did not return an edited image" }, { status: 502 });
     }
 
-    // Clean the result image (strip EXIF)
+    // Clean the result image (strip all AI/Gemini metadata)
     const resultBuffer = Buffer.from(imagePart.inlineData.data, "base64");
     const cleaned = await cleanImage(resultBuffer);
-    const editedDataUrl = `data:image/jpeg;base64,${cleaned.buffer.toString("base64")}`;
+
+    // Re-inject original camera EXIF so it looks like the original file
+    let finalBuffer = cleaned.buffer;
+    if (body.originalExif) {
+      const exifBuffer = Buffer.from(body.originalExif, "base64");
+      finalBuffer = injectExif(finalBuffer, exifBuffer);
+    }
+    const editedDataUrl = `data:image/jpeg;base64,${finalBuffer.toString("base64")}`;
+
+    // Use original filename (preserve extension, rename if needed)
+    const downloadFilename = body.originalFilename || cleaned.filename;
 
     // Log generate event
     const session = (await cookies()).get("session")?.value;
@@ -97,6 +109,7 @@ export async function POST(req: NextRequest) {
       ledgerResult,
       prompt,
       apiCostUSD,
+      downloadFilename,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
