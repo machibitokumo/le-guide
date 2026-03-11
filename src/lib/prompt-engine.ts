@@ -66,8 +66,6 @@ IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly ra
 - Long hex/alphanumeric hash strings (e.g. "71cdbfac-03ff-42ae-ad9b-aa2bd36dddcc") → new random hex in same format
 - Reference numbers (Refnr, Ref.nr, Kontrollnr, Auth, Approval code, etc.) → randomize digits
 - AID codes (e.g. "A0000000041010") → keep prefix "A000000", randomize the remaining digits
-- TSI / TVR codes → randomize the hex/digit values
-- Terminal IDs, POS IDs, Kassör/cashier numbers → randomize digits
 - Barcode number printed below the barcode → randomize all digits keeping exact same length
 - Any other alphanumeric string that looks like a unique transaction or device identifier
 Each replacement MUST match the exact same character format and length as the original.
@@ -78,6 +76,8 @@ DO NOT ADD any letters, codes, or labels (A, B, C, etc.) next to item names that
 DO NOT TOUCH (leave exactly as-is):
 - Card number or masked card number (e.g. **** **** **** 1234) — keep last 4 digits exactly as-is
 - Bank name, card type (Visa, Mastercard, etc.)
+- TSI / TVR codes
+- Terminal ID, POS ID, kassanummer / cashier number
 - Store name, merchant name, logo
 - Organization number / Org.nr / VAT number
 - Store address, phone number, website
