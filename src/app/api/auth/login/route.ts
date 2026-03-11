@@ -18,26 +18,30 @@ function verifyPassword(password: string, hash: string, salt: string): boolean {
   }
 }
 
+function setSessionCookie(res: NextResponse, username: string) {
+  const token = signToken(username);
+  res.cookies.set("session", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7,
+  });
+}
+
 export async function POST(req: NextRequest) {
-  const { username, password } = await req.json();
+  const { username, password, deviceFingerprint } = await req.json();
   if (!username || !password) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  // Check admin env-var credentials (cloud99)
+  // Admin (cloud99) — no device lock
   if (
     username === process.env.ADMIN_USERNAME &&
     password === process.env.ADMIN_PASSWORD
   ) {
-    const token = signToken(username);
     const res = NextResponse.json({ ok: true });
-    res.cookies.set("session", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    setSessionCookie(res, username);
     return res;
   }
 
@@ -49,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   const { data: user } = await supabase
     .from("users")
-    .select("username, password_hash, salt")
+    .select("username, password_hash, salt, device_fingerprint")
     .eq("username", username)
     .maybeSingle();
 
@@ -57,14 +61,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const token = signToken(username);
+  if (user.device_fingerprint) {
+    // Account already locked to a device — reject if fingerprint differs
+    if (user.device_fingerprint !== deviceFingerprint) {
+      return NextResponse.json(
+        { error: "This account is locked to another device" },
+        { status: 403 }
+      );
+    }
+  } else if (deviceFingerprint) {
+    // First login — lock the account to this device
+    await supabase
+      .from("users")
+      .update({ device_fingerprint: deviceFingerprint })
+      .eq("username", username);
+  }
+
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("session", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  setSessionCookie(res, username);
   return res;
 }

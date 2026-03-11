@@ -1,10 +1,14 @@
 -- Create users table for Le Guide multi-user auth
 CREATE TABLE IF NOT EXISTS users (
-  username     TEXT PRIMARY KEY,
-  password_hash TEXT NOT NULL,
-  salt         TEXT NOT NULL,
-  created_at   TIMESTAMPTZ DEFAULT NOW()
+  username           TEXT PRIMARY KEY,
+  password_hash      TEXT NOT NULL,
+  salt               TEXT NOT NULL,
+  device_fingerprint TEXT DEFAULT NULL, -- locked to first device that logs in
+  created_at         TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- If table already exists, add the column:
+ALTER TABLE users ADD COLUMN IF NOT EXISTS device_fingerprint TEXT DEFAULT NULL;
 
 -- Insert 13 users (passwords hashed with scrypt, 64-byte output)
 INSERT INTO users (username, password_hash, salt) VALUES

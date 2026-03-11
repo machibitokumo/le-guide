@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -9,6 +10,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const fingerprintRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    FingerprintJS.load()
+      .then(fp => fp.get())
+      .then(result => { fingerprintRef.current = result.visitorId; })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +28,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, deviceFingerprint: fingerprintRef.current }),
       });
 
       if (!res.ok) {

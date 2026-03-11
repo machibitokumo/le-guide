@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@fingerprintjs/fingerprintjs": "^5.1.0",
     "@google/genai": "^1.44.0",
     "@huggingface/inference": "^4.13.14",
     "@supabase/supabase-js": "^2.98.0",
