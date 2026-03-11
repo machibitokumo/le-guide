@@ -34,8 +34,7 @@ function calcCost(meta: unknown): number {
   return input * FLASH_INPUT_USD_PER_TOKEN + output * FLASH_OUTPUT_USD_PER_TOKEN;
 }
 
-async function analyzeWithGemini(rawText: string): Promise<{ items: StructuredItem[]; tokenCostUSD: number } | null> {
-  const apiKey = process.env.leguide_GEMINI_API_KEY;
+async function analyzeWithGemini(rawText: string, apiKey: string): Promise<{ items: StructuredItem[]; tokenCostUSD: number } | null> {
   if (!apiKey) return null;
 
   try {
@@ -143,10 +142,12 @@ function analyzeWithRegex(ocrResult: OCRResult): StructuredItem[] {
 // --- Public entry point ---
 
 export async function analyzeReceiptStructure(
-  ocrResult: OCRResult
+  ocrResult: OCRResult,
+  apiKey?: string
 ): Promise<{ structure: ReceiptStructure; tokenCostUSD: number }> {
+  const key = apiKey ?? process.env.leguide_GEMINI_API_KEY ?? "";
   // Try Gemini first — it understands any receipt format
-  const geminiResult = await analyzeWithGemini(ocrResult.rawText);
+  const geminiResult = await analyzeWithGemini(ocrResult.rawText, key);
   if (geminiResult && geminiResult.items.length > 0) {
     return { structure: { items: geminiResult.items }, tokenCostUSD: geminiResult.tokenCostUSD };
   }

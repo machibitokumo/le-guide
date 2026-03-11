@@ -4,17 +4,15 @@ import { cleanImage, getImageDimensions, extractExif } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { getUserApiKey } from "@/lib/get-user-api-key";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
-if (!process.env.leguide_GEMINI_API_KEY) {
-  throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
-}
-const ai = new GoogleGenAI({ apiKey: process.env.leguide_GEMINI_API_KEY });
-
 export async function POST(req: NextRequest) {
   try {
+    const { apiKey, username } = await getUserApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+
     const formData = await req.formData();
     const file = formData.get("receipt") as File | null;
 
@@ -103,7 +101,7 @@ export async function POST(req: NextRequest) {
       imageHeight: height,
     };
 
-    const { structure: receiptStructure, tokenCostUSD: analyzerCostUSD } = await analyzeReceiptStructure(ocrResult);
+    const { structure: receiptStructure, tokenCostUSD: analyzerCostUSD } = await analyzeReceiptStructure(ocrResult, apiKey);
 
     // Calculate OCR token cost
     const ocrMeta = response.usageMetadata as Record<string, unknown> | undefined;
@@ -113,8 +111,6 @@ export async function POST(req: NextRequest) {
     const apiCostUSD = ocrCostUSD + analyzerCostUSD;
 
     // Log upload event
-    const session = (await cookies()).get("session")?.value;
-    const username = session?.split(".")[0];
     if (username) {
       const supabase = createClient(process.env.leguide_SUPABASE_URL!, process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!);
       await supabase.from("activity_log").insert({

@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 import { cleanImage, injectExif } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
+import { getUserApiKey } from "@/lib/get-user-api-key";
 import type { OCRResult, ReceiptStructure } from "@/types/receipt";
-
-if (!process.env.leguide_GEMINI_API_KEY) {
-  throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
-}
-const ai = new GoogleGenAI({ apiKey: process.env.leguide_GEMINI_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
+    const { apiKey, username } = await getUserApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+
     const body = await req.json() as {
       imageUrl: string;
       ocrResult: OCRResult;
@@ -87,8 +85,6 @@ export async function POST(req: NextRequest) {
     const downloadFilename = body.originalFilename || cleaned.filename;
 
     // Log generate event
-    const session = (await cookies()).get("session")?.value;
-    const username = session?.split(".")[0];
     if (username) {
       const supabase = createClient(process.env.leguide_SUPABASE_URL!, process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!);
       await supabase.from("activity_log").insert({

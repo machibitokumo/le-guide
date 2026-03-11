@@ -4,11 +4,13 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash      TEXT NOT NULL,
   salt               TEXT NOT NULL,
   device_fingerprint TEXT DEFAULT NULL, -- locked to first device that logs in
+  gemini_api_key     TEXT DEFAULT NULL, -- per-user Gemini API key
   created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
--- If table already exists, add the column:
+-- If table already exists, add columns:
 ALTER TABLE users ADD COLUMN IF NOT EXISTS device_fingerprint TEXT DEFAULT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gemini_api_key TEXT DEFAULT NULL;
 
 -- Insert 13 users (passwords hashed with scrypt, 64-byte output)
 INSERT INTO users (username, password_hash, salt) VALUES
