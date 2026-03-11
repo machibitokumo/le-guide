@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
 import { cleanImage } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import type { OCRResult, ReceiptStructure } from "@/types/receipt";
+
+async function saveToStorage(username: string, buffer: Buffer, date: string): Promise<string | null> {
+  try {
+    const supabase = createClient(
+      process.env.leguide_SUPABASE_URL!,
+      process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const bucket = `receipts-${username}`;
+    const filename = `${date}_${randomUUID()}.jpg`;
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(filename, buffer, { contentType: "image/jpeg", upsert: false });
+    if (error) return null;
+    return filename;
+  } catch {
+    return null;
+  }
+}
 
 if (!process.env.leguide_GEMINI_API_KEY) {
   throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
@@ -67,6 +88,13 @@ export async function POST(req: NextRequest) {
     const resultBuffer = Buffer.from(imagePart.inlineData.data, "base64");
     const cleaned = await cleanImage(resultBuffer);
     const editedDataUrl = `data:image/jpeg;base64,${cleaned.buffer.toString("base64")}`;
+
+    // Save to user's storage bucket
+    const session = (await cookies()).get("session")?.value;
+    const username = session?.split(".")[0];
+    if (username) {
+      await saveToStorage(username, cleaned.buffer, body.date);
+    }
 
     return NextResponse.json({
       editedImageUrl: editedDataUrl,

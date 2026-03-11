@@ -7,9 +7,17 @@ function formatSEK(amount: number): string {
   return amount.toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr";
 }
 
+interface Receipt {
+  name: string;
+  url: string;
+  created_at: string;
+}
+
 export default function AppPage() {
   const [accumulated, setAccumulated] = useState<number | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/stats")
@@ -53,7 +61,14 @@ export default function AppPage() {
           {/* Right — Library */}
           <div className="flex flex-col items-end gap-0.5">
             <button
-              onClick={() => setShowLibrary(true)}
+              onClick={() => {
+                setShowLibrary(true);
+                setLibraryLoading(true);
+                fetch("/api/library")
+                  .then(r => r.json())
+                  .then(d => setReceipts(d.receipts ?? []))
+                  .finally(() => setLibraryLoading(false));
+              }}
               className="flex flex-col items-center gap-1 opacity-50 hover:opacity-100 transition-opacity"
             >
               <span style={{ fontSize: "2rem", lineHeight: 1 }}>🗂</span>
@@ -86,9 +101,28 @@ export default function AppPage() {
                 close
               </button>
             </div>
-            <p className="text-xs font-mono text-foreground/40">
-              Your generated receipts will appear here once storage is connected.
-            </p>
+            {libraryLoading && (
+              <p className="text-xs font-mono text-foreground/40">Loading...</p>
+            )}
+            {!libraryLoading && receipts.length === 0 && (
+              <p className="text-xs font-mono text-foreground/40">No receipts yet.</p>
+            )}
+            {!libraryLoading && receipts.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {receipts.map(r => (
+                  <a key={r.name} href={r.url} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={r.url}
+                      alt={r.name}
+                      className="w-full rounded-lg object-cover aspect-[3/4] hover:opacity-80 transition-opacity"
+                    />
+                    <p className="text-xs font-mono text-foreground/40 mt-1 truncate">
+                      {r.name.slice(0, 10)}
+                    </p>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
