@@ -1,9 +1,10 @@
 "use client";
 
-import { useReducer, useState, useRef } from "react";
+import { useReducer, useState, useRef, useEffect } from "react";
 import type { PipelineState, OCRResult, LedgerResult, ReceiptStructure } from "@/types/receipt";
 import UploadZone from "./UploadZone";
 import FooterActions from "./FooterActions";
+import PixelLoader from "./PixelLoader";
 
 type Action =
   | { type: "UPLOAD_START" }
@@ -66,7 +67,20 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const [targetTotal, setTargetTotal] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
+  const [loaderPhase, setLoaderPhase] = useState<"off" | "loading" | "done">("off");
   const ocrCostRef = useRef(0);
+
+  const isLoading = state.step === "uploading" || state.step === "generating";
+
+  // Drive loader phase from step transitions
+  useEffect(() => {
+    if (isLoading) {
+      setLoaderPhase("loading");
+    } else if (loaderPhase === "loading") {
+      setLoaderPhase("done");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   const handleUpload = async (file: File) => {
     dispatch({ type: "UPLOAD_START" });
@@ -218,13 +232,18 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
         </p>
       </div>
 
-      {/* Loading spinner */}
-      {(state.step === "uploading" || state.step === "generating") && (
-        <div className="flex flex-col items-center gap-4 py-12">
-          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-foreground/50 font-mono animate-pulse">
-            {state.step === "uploading" ? "Analyzing receipt..." : "Generating edited image..."}
-          </p>
+      {/* Pixel loader */}
+      {loaderPhase !== "off" && (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <PixelLoader
+            done={loaderPhase === "done"}
+            onExplodeDone={() => setLoaderPhase("off")}
+          />
+          {loaderPhase === "loading" && (
+            <p className="text-xs text-foreground/40 font-mono animate-pulse">
+              {state.step === "uploading" ? "Analyzing receipt..." : "Generating edited image..."}
+            </p>
+          )}
         </div>
       )}
 
@@ -234,7 +253,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       )}
 
       {/* Targeting */}
-      {state.step === "targeting" && (
+      {state.step === "targeting" && loaderPhase === "off" && (
         <div className="w-full max-w-md mx-auto space-y-6">
           <img
             src={state.imageUrl}
@@ -278,7 +297,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       )}
 
       {/* Done */}
-      {state.step === "done" && (
+      {state.step === "done" && loaderPhase === "off" && (
         <div className="space-y-6">
           <div className="w-full max-w-2xl mx-auto grid grid-cols-2 gap-4">
             <div>
