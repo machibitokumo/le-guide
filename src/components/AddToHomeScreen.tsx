@@ -17,10 +17,8 @@ export default function AddToHomeScreen() {
     const isIOS =
       /iphone|ipad|ipod/i.test(navigator.userAgent) &&
       !("MSStream" in window);
-    const isSafari =
-      /safari/i.test(navigator.userAgent) && !/chrome/i.test(navigator.userAgent);
 
-    if (isIOS && isSafari) {
+    if (isIOS) {
       setState("ios");
       return;
     }
