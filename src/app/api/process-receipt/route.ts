@@ -74,10 +74,7 @@ export async function POST(req: NextRequest) {
     try {
       parsedItems = JSON.parse(jsonStr);
     } catch {
-      return NextResponse.json({
-        error: "Failed to parse OCR response",
-        raw: rawText,
-      }, { status: 502 });
+      return NextResponse.json({ error: "OCR response could not be parsed" }, { status: 502 });
     }
 
     const items: OCRItem[] = parsedItems.map((item) => ({

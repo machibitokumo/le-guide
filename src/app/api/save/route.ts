@@ -1,10 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
+import { getSessionUsername } from "@/lib/session";
 
 export async function POST(req: Request) {
-  const session = (await cookies()).get("session")?.value;
-  const username = session?.split(".")[0];
+  const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { originalImageUrl, editedImageUrl, targetTotal, date } = await req.json();

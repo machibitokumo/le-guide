@@ -1,20 +1,5 @@
 import type { ReceiptStructure } from "@/types/receipt";
 
-const SURFACES = ['light wood table', 'white desk', 'dark countertop', 'on a grey fabric'];
-const CONDITIONS = ['flat and crisp', 'folded once in the middle', 'slightly crumpled', 'curled at the edges'];
-const LIGHTING = ['warm indoor lighting', 'cool fluorescent light', 'natural daylight from a window', 'slight shadow from the side'];
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function getAgingPrompt(receiptDate: string): string {
-  const age = Math.floor((Date.now() - new Date(receiptDate).getTime()) / 86400000);
-  if (age <= 7) return 'The receipt paper is fresh and crisp, bright white, ink is sharp and dark.';
-  if (age <= 28) return 'The receipt paper has slight yellowing at the edges, one subtle fold line across the middle, ink is still clear.';
-  if (age <= 90) return 'The receipt paper is noticeably yellowed, has multiple fold lines, slight crumpling, ink is starting to fade slightly.';
-  return 'The receipt paper is heavily yellowed, well-worn with many fold creases, ink is faded and partially illegible in places, paper feels thin and fragile.';
-}
 
 function buildItemMap(structure: ReceiptStructure, goingDown: boolean): string {
   if (!structure?.items?.length) return "";
@@ -25,34 +10,24 @@ function buildItemMap(structure: ReceiptStructure, goingDown: boolean): string {
       const newQtyHint = goingDown
         ? `reduce N below ${item.currentQty} (minimum 1)`
         : `raise N above ${item.currentQty}`;
-      return `- ${item.name}: Type A — has quantity sub-line. Currently ${item.currentQty} ${item.qtyUnit ?? "st"} × ${item.unitPrice.toFixed(2)} = ${item.currentPrice.toFixed(2)}. EDIT: ${newQtyHint}. N must be a whole integer. Update the line total to N × ${item.unitPrice.toFixed(2)}. Do NOT duplicate the item name.`;
+      return `- ${item.name}: [HAS-QTY-LINE] Currently ${item.currentQty} ${item.qtyUnit ?? "st"} × ${item.unitPrice.toFixed(2)} = ${item.currentPrice.toFixed(2)}. EDIT: ${newQtyHint}. N must be a whole integer. Update the line total to N × ${item.unitPrice.toFixed(2)}. Do NOT duplicate the item name. Do NOT add any letter or label next to the item name.`;
     }
     const hint = goingDown
       ? `lower the price below ${item.currentPrice.toFixed(2)}`
       : `raise the price above ${item.currentPrice.toFixed(2)}`;
-    return `- ${item.name}: Type B — no quantity sub-line. Current price: ${item.currentPrice.toFixed(2)}. EDIT: ${hint}. Change only the price value in place. Do NOT add a quantity sub-line.`;
+    return `- ${item.name}: [PRICE-ONLY] Current price: ${item.currentPrice.toFixed(2)}. EDIT: ${hint}. Change only the price value in place. Do NOT add a quantity sub-line. Do NOT add any letter or label next to the item name.`;
   });
 
   return `\nITEM MAP (derived from OCR — use this as your editing guide):\n${lines.join("\n")}`;
 }
 
-function randomTime(): string {
-  const h = 9 + Math.floor(Math.random() * 12);
-  const m = Math.floor(Math.random() * 60);
-  const s = Math.floor(Math.random() * 60);
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 export function buildEditPrompt(opts: {
   targetTotal: number;
   date: string;
+  time?: string;
   originalTotal?: number;
   receiptStructure?: ReceiptStructure;
 }): string {
-  const aging = getAgingPrompt(opts.date);
-  const surfacePart = Math.random() > 0.5 ? ` Background surface: ${pick(SURFACES)}.` : '';
-  const lightingPart = Math.random() > 0.5 ? ` Lighting: ${pick(LIGHTING)}.` : '';
-  const variation = `Paper condition: ${pick(CONDITIONS)}.${surfacePart}${lightingPart}`;
   const targetStr = opts.targetTotal.toFixed(2);
   const goingDown = opts.originalTotal !== undefined ? opts.targetTotal < opts.originalTotal : false;
   const direction = goingDown ? "LOWER" : "HIGHER";
@@ -60,14 +35,29 @@ export function buildEditPrompt(opts: {
     ? "Every item change MUST reduce a line total — do NOT raise any individual price or quantity."
     : "Every item change MUST increase a line total — do NOT lower any individual price or quantity.";
   const itemMap = opts.receiptStructure ? buildItemMap(opts.receiptStructure, goingDown) : "";
-  const time = randomTime();
 
-  return `You are a receipt image editor.
+  // Use provided time or fall back to random plausible shopping time (09:00–20:59)
+  const s = Math.floor(Math.random() * 60);
+  const resolvedTime = opts.time
+    ? `${opts.time}:${String(s).padStart(2, "0")}`
+    : (() => {
+        const h = 9 + Math.floor(Math.random() * 12);
+        const m = Math.floor(Math.random() * 60);
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      })();
+  const datetime = `${opts.date} ${resolvedTime}`;
 
-TASK: Edit this receipt photo. Change ONLY these values:
+  return `You are a receipt image editor performing SURGICAL TEXT EDITS ONLY.
+
+ABSOLUTE OUTPUT REQUIREMENTS — these override everything else:
+- OUTPUT the image in the EXACT SAME ORIENTATION as the input (portrait stays portrait, landscape stays landscape). Do NOT rotate.
+- OUTPUT the EXACT SAME dimensions and crop. Do NOT zoom in, zoom out, or cut off any part of the image.
+- PRESERVE the EXACT SAME lighting, brightness, contrast, shadow, background, and image quality as the input photo.
+- This is NOT a regeneration. You are NOT drawing a new receipt. You are editing specific text values on the existing photo — everything else stays pixel-perfect identical.
+
+TASK: On the existing receipt photo above, change ONLY these text values:
 - Total/sum: change to ${targetStr} (this is ${direction} than the original${opts.originalTotal ? ` of ${opts.originalTotal.toFixed(2)}` : ""})
-- Date: change to ${opts.date}
-- Time: change to ${time}
+- Date and time: change every date/time occurrence to ${datetime}
 - All unique identifier codes — see IDENTIFIER RULES below
 ${itemMap}
 
@@ -75,7 +65,7 @@ IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly ra
 - Receipt / kvitto numbers (e.g. "252200-001-96396") → new number, same format and length
 - Long hex/alphanumeric hash strings (e.g. "71cdbfac-03ff-42ae-ad9b-aa2bd36dddcc") → new random hex in same format
 - Reference numbers (Refnr, Ref.nr, Kontrollnr, Auth, Approval code, etc.) → randomize digits
-- AID codes (e.g. "A0000000041010") → keep prefix "A000000" randomize the remaining digits
+- AID codes (e.g. "A0000000041010") → keep prefix "A000000", randomize the remaining digits
 - TSI / TVR codes → randomize the hex/digit values
 - Terminal IDs, POS IDs, Kassör/cashier numbers → randomize digits
 - Barcode number printed below the barcode → randomize all digits keeping exact same length
@@ -84,23 +74,33 @@ IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly ra
 Each replacement MUST match the exact same character format and length as the original.
 No two generations of the same receipt should share any traceable code.
 
+DO NOT ADD any letters, codes, or labels (A, B, C, etc.) next to item names that were not already there in the original image. Do not modify or remove VAT category letters that already exist on the receipt.
+
+DO NOT TOUCH (leave exactly as-is):
+- Store name, merchant name, logo
+- Organization number / Org.nr / VAT number
+- Store address, phone number, website
+- Any barcode or QR code graphic (only randomize the number printed below it)
+
 CRITICAL RULES FOR ADJUSTING THE TOTAL:
 1. NEVER add new products, NEVER remove existing products, NEVER add new lines to the receipt.
 2. The receipt MUST stay exactly the same height — no extra lines whatsoever.
 3. DIRECTION RULE: ${directionRule}
-4. There are TWO types of items on receipts — treat them differently:
+4. There are TWO kinds of items on receipts — treat them differently:
 
-   TYPE A — Items WITH an existing quantity sub-line (e.g. "2  st x 13,50"):
+   [HAS-QTY-LINE] — Items WITH an existing quantity sub-line (e.g. "2  st x 13,50"):
    - Change the quantity number on that sub-line to move toward the target total
    - The quantity MUST be a whole integer — NEVER use decimals (no "6,5 st" or "3.2 st")
    - Minimum quantity is 1 — never go to 0
    - Update the line-total price to match: new qty × unit price
    - Do NOT duplicate the item name — only edit the existing sub-line in place
+   - Do NOT add any letter, label, or code next to the item name
 
-   TYPE B — Items WITHOUT a quantity sub-line (just a name and a price):
+   [PRICE-ONLY] — Items WITHOUT a quantity sub-line (just a name and a price):
    - Do NOT add a quantity sub-line — that would make the receipt taller
    - Change the price value directly on the existing price field
    - Keep changes proportional (e.g. 93,00 can become 46,50 or 139,50, not 4,00)
+   - Do NOT add any letter, label, or code next to the item name
 
 5. For gas station receipts: change liters on the existing liter line.
 6. The final total MUST exactly match ${targetStr}.
@@ -108,9 +108,10 @@ CRITICAL RULES FOR ADJUSTING THE TOTAL:
 
 VISUAL RULES:
 - Keep the EXACT same receipt layout, merchant branding, and font style.
-- ${aging}
-- ${variation}
-- The result must look like a natural, unedited receipt photo.`;
+- Keep the EXACT same background, table surface, lighting, shadows, and photo angle as the input.
+- Do NOT change the paper condition, color, or texture.
+- The edited values must match the font, size, weight, and spacing of the surrounding text on the receipt.
+- The result must be indistinguishable from a photo of the original receipt.`;
 }
 
 export function buildOCRSystemPrompt(): string {

@@ -66,6 +66,10 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const [state, dispatch] = useReducer(reducer, { step: "idle" });
   const [targetTotal, setTargetTotal] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  });
   const [saving, setSaving] = useState(false);
   const [loaderPhase, setLoaderPhase] = useState<"off" | "loading" | "done">("off");
   const ocrCostRef = useRef(0);
@@ -129,7 +133,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       const res = await fetch("/api/edit-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, ocrResult, receiptStructure, targetTotal: total, date, originalFilename, originalExif }),
+        body: JSON.stringify({ imageUrl, ocrResult, receiptStructure, targetTotal: total, date, time, originalFilename, originalExif }),
       });
 
       if (!res.ok) {
@@ -188,6 +192,8 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const handleRestart = () => {
     setTargetTotal("");
     setDate(new Date().toISOString().slice(0, 10));
+    const now = new Date();
+    setTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
     dispatch({ type: "RESTART" });
   };
 
@@ -274,16 +280,29 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
                 className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
-            <div>
-              <label className="block text-xs text-foreground/50 font-mono mb-1">
-                Receipt date
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-                className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground/50 font-mono mb-1">
+                  Receipt date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground/50 font-mono mb-1">
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={e => setTime(e.target.value)}
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+              </div>
             </div>
             <button
               onClick={handleGenerate}

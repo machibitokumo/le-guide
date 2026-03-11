@@ -25,9 +25,24 @@ async function verifySession(token: string): Promise<boolean> {
 }
 
 export async function proxy(req: NextRequest) {
-  const token = req.cookies.get("session")?.value;
+  const path = req.nextUrl.pathname;
 
-  if (!token || !(await verifySession(token))) {
+  // Auth routes are always public
+  if (path.startsWith("/api/auth/")) {
+    return NextResponse.next();
+  }
+
+  const token = req.cookies.get("session")?.value;
+  const valid = token && (await verifySession(token));
+
+  if (!valid) {
+    // API routes → JSON 401, not a redirect
+    if (path.startsWith("/api/")) {
+      return new NextResponse(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      );
+    }
     return NextResponse.redirect(new URL("/", req.url));
   }
 
@@ -35,5 +50,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*"],
+  matcher: ["/app/:path*", "/api/:path*"],
 };

@@ -1,6 +1,17 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+* {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 :root {
   --background: #f1f1f1;
   --foreground: #111111;

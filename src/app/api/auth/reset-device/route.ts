@@ -1,12 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { getSessionUsername } from "@/lib/session";
 
 // Admin-only: clear device fingerprint so a user can log in from a new device
 export async function POST(req: Request) {
-  const session = (await cookies()).get("session")?.value;
-  const callerUsername = session?.split(".")[0];
+  const caller = await getSessionUsername();
 
-  if (callerUsername !== process.env.ADMIN_USERNAME) {
+  if (caller !== process.env.ADMIN_USERNAME) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -23,5 +22,5 @@ export async function POST(req: Request) {
     .update({ device_fingerprint: null })
     .eq("username", username);
 
-  return Response.json({ ok: true, message: `Device reset for ${username}` });
+  return Response.json({ ok: true });
 }

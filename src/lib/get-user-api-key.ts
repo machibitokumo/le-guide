@@ -1,13 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { getSessionUsername } from "@/lib/session";
 
 /**
  * Returns the Gemini API key for the currently logged-in user.
  * Falls back to the shared env var (used for admin / local dev).
  */
 export async function getUserApiKey(): Promise<{ apiKey: string; username: string | null }> {
-  const session = (await cookies()).get("session")?.value;
-  const username = session?.split(".")[0] ?? null;
+  const username = await getSessionUsername();
 
   if (username) {
     const supabase = createClient(

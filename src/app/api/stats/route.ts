@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { getSessionUsername } from "@/lib/session";
 
 function getSupabase() {
   return createClient(
@@ -8,15 +8,9 @@ function getSupabase() {
   );
 }
 
-async function getUsername(): Promise<string | null> {
-  const session = (await cookies()).get("session")?.value;
-  if (!session) return null;
-  return session.split(".")[0];
-}
-
 // GET — return accumulated total for current user
 export async function GET() {
-  const username = await getUsername();
+  const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data, error } = await getSupabase()
@@ -32,7 +26,7 @@ export async function GET() {
 
 // POST — increment accumulated total by amount
 export async function POST(req: Request) {
-  const username = await getUsername();
+  const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { amount } = await req.json();

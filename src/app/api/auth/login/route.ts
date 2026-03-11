@@ -1,28 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, scryptSync } from "crypto";
+import { scryptSync, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { signToken } from "@/lib/session";
 
-function signToken(username: string): string {
-  const sig = createHmac("sha256", process.env.SESSION_SECRET!)
-    .update(username)
-    .digest("hex");
-  return `${username}.${sig}`;
+// ---------------------------------------------------------------------------
+// Rate limiter — best-effort in serverless; protects within a single instance
+// ---------------------------------------------------------------------------
+const rateStore = new Map<string, number[]>();
+const RATE_MAX = 10;
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const attempts = (rateStore.get(key) ?? []).filter(t => now - t < RATE_WINDOW_MS);
+  if (attempts.length >= RATE_MAX) return true;
+  attempts.push(now);
+  rateStore.set(key, attempts);
+  return false;
 }
+
+// ---------------------------------------------------------------------------
 
 function verifyPassword(password: string, hash: string, salt: string): boolean {
   try {
-    const derived = scryptSync(password, salt, 64).toString("hex");
-    return derived === hash;
+    const derived = scryptSync(password, salt, 64);
+    return timingSafeEqual(derived, Buffer.from(hash, "hex"));
   } catch {
     return false;
   }
 }
 
 function setSessionCookie(res: NextResponse, username: string) {
-  const token = signToken(username);
-  res.cookies.set("session", token, {
+  res.cookies.set("session", signToken(username), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: true,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
@@ -30,13 +41,28 @@ function setSessionCookie(res: NextResponse, username: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit by IP
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429 }
+    );
+  }
+
   const { username, password, deviceFingerprint } = await req.json();
   if (!username || !password) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  // Admin (cloud99) — no device lock
+  // Admin — no device lock; requires env vars to be explicitly set
   if (
+    process.env.ADMIN_USERNAME &&
+    process.env.ADMIN_PASSWORD &&
     username === process.env.ADMIN_USERNAME &&
     password === process.env.ADMIN_PASSWORD
   ) {
@@ -62,10 +88,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (user.device_fingerprint) {
-    // Account already locked to a device — reject if fingerprint differs
     if (user.device_fingerprint !== deviceFingerprint) {
       return NextResponse.json(
-        { error: "This account is locked to another device" },
+        { error: "Account locked to a different device" },
         { status: 403 }
       );
     }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import ReceiptWizard from "@/components/ReceiptWizard";
 import AddToHomeScreen from "@/components/AddToHomeScreen";
+import { useInactivityLogout } from "@/hooks/useInactivityLogout";
 
 function formatSEK(amount: number): string {
   return amount.toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr";
@@ -15,6 +16,7 @@ interface Receipt {
 }
 
 export default function AppPage() {
+  useInactivityLogout();
   const [accumulated, setAccumulated] = useState<number | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -37,8 +39,8 @@ export default function AppPage() {
     setAccumulated(data.accumulated_total ?? 0);
   };
 
-  // accumulated is USD; convert to SEK at ~10.5, then ×2 markup
-  const SEK_RATE = 10.5;
+  // accumulated is USD; convert to SEK (configurable via NEXT_PUBLIC_SEK_RATE), then ×2 markup
+  const SEK_RATE = parseFloat(process.env.NEXT_PUBLIC_SEK_RATE ?? "10.5");
   const displayCost = accumulated === null ? "..." : formatSEK(accumulated * SEK_RATE * 2);
 
   return (

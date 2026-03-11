@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       receiptStructure: ReceiptStructure;
       targetTotal: number;
       date: string; // YYYY-MM-DD
+      time?: string; // HH:MM
       originalFilename: string;
       originalExif: string | null;
     };
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest) {
     const prompt = buildEditPrompt({
       targetTotal: body.targetTotal,
       date: body.date,
+      time: body.time,
       originalTotal,
       receiptStructure: body.receiptStructure,
     });
@@ -103,7 +105,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       editedImageUrl: editedDataUrl,
       ledgerResult,
-      prompt,
       apiCostUSD,
       downloadFilename,
     });
