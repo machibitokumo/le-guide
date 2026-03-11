@@ -3,6 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 import { cleanImage, getImageDimensions } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
+import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
@@ -96,13 +98,33 @@ export async function POST(req: NextRequest) {
       imageHeight: height,
     };
 
-    const receiptStructure = await analyzeReceiptStructure(ocrResult);
+    const { structure: receiptStructure, tokenCostUSD: analyzerCostUSD } = await analyzeReceiptStructure(ocrResult);
+
+    // Calculate OCR token cost
+    const ocrMeta = response.usageMetadata as Record<string, unknown> | undefined;
+    const ocrInput = Number(ocrMeta?.promptTokenCount ?? ocrMeta?.inputTokenCount ?? 0);
+    const ocrOutput = Number(ocrMeta?.candidatesTokenCount ?? ocrMeta?.outputTokenCount ?? 0);
+    const ocrCostUSD = (ocrInput * 0.15 + ocrOutput * 0.60) / 1_000_000;
+    const apiCostUSD = ocrCostUSD + analyzerCostUSD;
+
+    // Log upload event
+    const session = (await cookies()).get("session")?.value;
+    const username = session?.split(".")[0];
+    if (username) {
+      const supabase = createClient(process.env.leguide_SUPABASE_URL!, process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!);
+      await supabase.from("activity_log").insert({
+        username,
+        action: "upload",
+        metadata: { file_size: file.size, mime_type: file.type, image_width: width, image_height: height },
+      });
+    }
 
     // Return OCR result + structure + cleaned image as base64 data URL
     return NextResponse.json({
       ocr: ocrResult,
       receiptStructure,
       imageUrl: dataUrl,
+      apiCostUSD,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

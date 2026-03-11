@@ -29,6 +29,14 @@ export default function FooterActions({
   ledgerResult,
   onRestart,
 }: FooterActionsProps) {
+  const logDownload = () => {
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "download" }),
+    }).catch(() => {});
+  };
+
   const handleCopy = async () => {
     try {
       await copyImageToClipboard(editedImageUrl);
@@ -47,7 +55,7 @@ export default function FooterActions({
         Copy image
       </button>
       <button
-        onClick={() => downloadImage(editedImageUrl, "receipt-edited.jpg")}
+        onClick={() => { downloadImage(editedImageUrl, "receipt-edited.jpg"); logDownload(); }}
         className="flex-1 min-w-[120px] py-2.5 px-4 rounded-lg bg-muted hover:bg-border text-sm font-mono transition-colors"
       >
         Download image

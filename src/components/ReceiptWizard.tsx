@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useState } from "react";
+import { useReducer, useState, useRef } from "react";
 import type { PipelineState, OCRResult, LedgerResult, ReceiptStructure } from "@/types/receipt";
 import UploadZone from "./UploadZone";
 import FooterActions from "./FooterActions";
@@ -10,9 +10,10 @@ type Action =
   | { type: "UPLOAD_ERROR"; message: string }
   | { type: "OCR_COMPLETE"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
   | { type: "GENERATE_START"; targetTotal: number; date: string }
-  | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
+  | { type: "GENERATE_COMPLETE"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; targetTotal: number; date: string }
   | { type: "ERROR"; message: string }
-  | { type: "RESTART" };
+  | { type: "RESTART" }
+  | { type: "SET_SAVED" };
 
 function reducer(state: PipelineState, action: Action): PipelineState {
   switch (action.type) {
@@ -30,9 +31,15 @@ function reducer(state: PipelineState, action: Action): PipelineState {
         editedImageUrl: action.editedImageUrl,
         ledgerResult: action.ledgerResult,
         originalImageUrl: action.originalImageUrl,
+        targetTotal: action.targetTotal,
+        date: action.date,
+        saved: false,
       };
     case "ERROR":
       return { step: "error", message: action.message };
+    case "SET_SAVED":
+      if (state.step !== "done") return state;
+      return { ...state, saved: true };
     case "RESTART":
       return { step: "idle" };
     default:
@@ -50,13 +57,15 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 interface ReceiptWizardProps {
-  onGenerated?: (targetTotal: number) => void;
+  onGenerated?: (targetTotal: number, apiCostUSD: number) => void;
 }
 
 export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const [state, dispatch] = useReducer(reducer, { step: "idle" });
   const [targetTotal, setTargetTotal] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+  const ocrCostRef = useRef(0);
 
   const handleUpload = async (file: File) => {
     dispatch({ type: "UPLOAD_START" });
@@ -76,6 +85,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       }
 
       const data = await res.json();
+      ocrCostRef.current = data.apiCostUSD ?? 0;
       dispatch({
         type: "OCR_COMPLETE",
         ocrResult: data.ocr,
@@ -116,14 +126,45 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
         editedImageUrl: data.editedImageUrl,
         ledgerResult: data.ledgerResult,
         originalImageUrl: imageUrl,
+        targetTotal: total,
+        date,
       });
-      onGenerated?.(total);
+      onGenerated?.(total, ocrCostRef.current + (data.apiCostUSD ?? 0));
     } catch (err) {
       dispatch({
         type: "ERROR",
         message: err instanceof Error ? err.message : "Generation failed",
       });
     }
+  };
+
+  const handleSave = async () => {
+    if (state.step !== "done" || state.saved || saving) return;
+    setSaving(true);
+    try {
+      await fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originalImageUrl: state.originalImageUrl,
+          editedImageUrl: state.editedImageUrl,
+          targetTotal: state.targetTotal,
+          date: state.date,
+        }),
+      });
+      dispatch({ type: "SET_SAVED" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDiscard = async () => {
+    await fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "discard" }),
+    });
+    handleRestart();
   };
 
   const handleRestart = () => {
@@ -260,6 +301,29 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
               {state.ledgerResult.warnings.map((w, i) => (
                 <p key={i} className="text-xs text-foreground/60">{w}</p>
               ))}
+            </div>
+          )}
+
+          {!state.saved ? (
+            <div className="w-full max-w-2xl mx-auto flex gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-3 rounded-lg bg-accent text-background text-sm font-mono font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              >
+                {saving ? "Saving..." : "Save to Library"}
+              </button>
+              <button
+                onClick={handleDiscard}
+                disabled={saving}
+                className="flex-1 py-3 rounded-lg bg-danger/20 hover:bg-danger/30 text-danger text-sm font-mono transition-colors disabled:opacity-40"
+              >
+                Discard
+              </button>
+            </div>
+          ) : (
+            <div className="w-full max-w-2xl mx-auto">
+              <p className="text-center text-xs text-foreground/40 font-mono">Saved to Library</p>
             </div>
           )}
 

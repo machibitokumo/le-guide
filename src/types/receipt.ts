@@ -63,5 +63,5 @@ export type PipelineState =
   | { step: "processing"; progress?: number }
   | { step: "targeting"; ocrResult: OCRResult; imageUrl: string; receiptStructure: ReceiptStructure }
   | { step: "generating"; targetTotal: number; date: string }
-  | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string }
+  | { step: "done"; editedImageUrl: string; ledgerResult: LedgerResult; originalImageUrl: string; saved: boolean; targetTotal: number; date: string }
   | { step: "error"; message: string; previousStep?: string };

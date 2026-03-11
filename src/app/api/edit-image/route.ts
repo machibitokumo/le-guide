@@ -2,29 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { randomUUID } from "crypto";
 import { cleanImage } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import type { OCRResult, ReceiptStructure } from "@/types/receipt";
-
-async function saveToStorage(username: string, buffer: Buffer, date: string): Promise<string | null> {
-  try {
-    const supabase = createClient(
-      process.env.leguide_SUPABASE_URL!,
-      process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
-    );
-    const bucket = `receipts-${username}`;
-    const filename = `${date}_${randomUUID()}.jpg`;
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(filename, buffer, { contentType: "image/jpeg", upsert: false });
-    if (error) return null;
-    return filename;
-  } catch {
-    return null;
-  }
-}
 
 if (!process.env.leguide_GEMINI_API_KEY) {
   throw new Error("leguide_GEMINI_API_KEY environment variable is not set");
@@ -51,10 +32,14 @@ export async function POST(req: NextRequest) {
     // Reconcile VAT and totals from target
     const ledgerResult = reconcile(body.ocrResult, body.targetTotal);
 
+    // Extract original total from OCR
+    const originalTotal = body.ocrResult.items.find(i => i.type === "total")?.value;
+
     // Build prompt with receipt structure so model knows exactly what it can edit
     const prompt = buildEditPrompt({
       targetTotal: body.targetTotal,
       date: body.date,
+      originalTotal,
       receiptStructure: body.receiptStructure,
     });
 
@@ -89,17 +74,29 @@ export async function POST(req: NextRequest) {
     const cleaned = await cleanImage(resultBuffer);
     const editedDataUrl = `data:image/jpeg;base64,${cleaned.buffer.toString("base64")}`;
 
-    // Save to user's storage bucket
+    // Log generate event
     const session = (await cookies()).get("session")?.value;
     const username = session?.split(".")[0];
     if (username) {
-      await saveToStorage(username, cleaned.buffer, body.date);
+      const supabase = createClient(process.env.leguide_SUPABASE_URL!, process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!);
+      await supabase.from("activity_log").insert({
+        username,
+        action: "generate",
+        metadata: { target_total: body.targetTotal, date: body.date },
+      });
     }
+
+    // Calculate edit token cost
+    const editMeta = response.usageMetadata as Record<string, unknown> | undefined;
+    const editInput = Number(editMeta?.promptTokenCount ?? editMeta?.inputTokenCount ?? 0);
+    const editOutput = Number(editMeta?.candidatesTokenCount ?? editMeta?.outputTokenCount ?? 0);
+    const apiCostUSD = (editInput * 0.15 + editOutput * 0.60) / 1_000_000;
 
     return NextResponse.json({
       editedImageUrl: editedDataUrl,
       ledgerResult,
       prompt,
+      apiCostUSD,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

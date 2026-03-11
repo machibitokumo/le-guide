@@ -23,7 +23,18 @@ Rules:
 Receipt OCR text:
 `;
 
-async function analyzeWithGemini(rawText: string): Promise<StructuredItem[] | null> {
+const FLASH_INPUT_USD_PER_TOKEN = 0.15 / 1_000_000;
+const FLASH_OUTPUT_USD_PER_TOKEN = 0.60 / 1_000_000;
+
+function calcCost(meta: unknown): number {
+  if (!meta || typeof meta !== "object") return 0;
+  const m = meta as Record<string, unknown>;
+  const input = Number(m.promptTokenCount ?? m.inputTokenCount ?? 0);
+  const output = Number(m.candidatesTokenCount ?? m.outputTokenCount ?? 0);
+  return input * FLASH_INPUT_USD_PER_TOKEN + output * FLASH_OUTPUT_USD_PER_TOKEN;
+}
+
+async function analyzeWithGemini(rawText: string): Promise<{ items: StructuredItem[]; tokenCostUSD: number } | null> {
   const apiKey = process.env.leguide_GEMINI_API_KEY;
   if (!apiKey) return null;
 
@@ -46,7 +57,7 @@ async function analyzeWithGemini(rawText: string): Promise<StructuredItem[] | nu
       qtyUnit?: string;
     }>;
 
-    return parsed.map(item => ({
+    const items = parsed.map(item => ({
       name: item.name,
       type: item.type,
       unitPrice: item.unitPrice ?? 0,
@@ -54,6 +65,8 @@ async function analyzeWithGemini(rawText: string): Promise<StructuredItem[] | nu
       currentPrice: item.currentPrice ?? 0,
       qtyUnit: item.qtyUnit,
     }));
+
+    return { items, tokenCostUSD: calcCost(response.usageMetadata) };
   } catch {
     return null;
   }
@@ -131,13 +144,13 @@ function analyzeWithRegex(ocrResult: OCRResult): StructuredItem[] {
 
 export async function analyzeReceiptStructure(
   ocrResult: OCRResult
-): Promise<ReceiptStructure> {
+): Promise<{ structure: ReceiptStructure; tokenCostUSD: number }> {
   // Try Gemini first — it understands any receipt format
-  const geminiItems = await analyzeWithGemini(ocrResult.rawText);
-  if (geminiItems && geminiItems.length > 0) {
-    return { items: geminiItems };
+  const geminiResult = await analyzeWithGemini(ocrResult.rawText);
+  if (geminiResult && geminiResult.items.length > 0) {
+    return { structure: { items: geminiResult.items }, tokenCostUSD: geminiResult.tokenCostUSD };
   }
 
   // Fallback to regex if Gemini fails
-  return { items: analyzeWithRegex(ocrResult) };
+  return { structure: { items: analyzeWithRegex(ocrResult) }, tokenCostUSD: 0 };
 }

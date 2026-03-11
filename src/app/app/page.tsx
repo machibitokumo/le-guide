@@ -25,17 +25,20 @@ export default function AppPage() {
       .then(d => setAccumulated(d.accumulated_total ?? 0));
   }, []);
 
-  const handleGenerated = async (total: number) => {
+  const handleGenerated = async (_total: number, apiCostUSD: number) => {
+    // Store in USD; display converts to SEK
     const res = await fetch("/api/stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: total }),
+      body: JSON.stringify({ amount: apiCostUSD }),
     });
     const data = await res.json();
     setAccumulated(data.accumulated_total ?? 0);
   };
 
-  const displayCost = accumulated === null ? "..." : formatSEK(accumulated * 2);
+  // accumulated is USD; convert to SEK at ~10.5, then ×2 markup
+  const SEK_RATE = 10.5;
+  const displayCost = accumulated === null ? "..." : formatSEK(accumulated * SEK_RATE * 2);
 
   return (
     <main className="min-h-screen flex flex-col items-center px-4 py-8">
