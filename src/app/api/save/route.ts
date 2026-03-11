@@ -14,7 +14,10 @@ export async function POST(req: Request) {
     process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const bucket = `receipts-${username}`;
+  const bucket = `receipts-${username.toLowerCase()}`;
+
+  // Ensure bucket exists (no-op if already created)
+  await supabase.storage.createBucket(bucket, { public: false }).catch(() => {});
   const id = randomUUID();
 
   async function uploadBase64(dataUrl: string, suffix: string): Promise<string | null> {

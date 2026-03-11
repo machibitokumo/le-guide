@@ -11,14 +11,17 @@ export async function GET() {
     process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const bucket = `receipts-${username}`;
+  const bucket = `receipts-${username.toLowerCase()}`;
+
+  // Ensure bucket exists
+  await supabase.storage.createBucket(bucket, { public: false }).catch(() => {});
 
   // List files in bucket
   const { data: files, error } = await supabase.storage
     .from(bucket)
     .list("", { sortBy: { column: "created_at", order: "desc" } });
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ receipts: [] });
   if (!files?.length) return Response.json({ receipts: [] });
 
   // Generate signed URLs (valid 1 hour)
