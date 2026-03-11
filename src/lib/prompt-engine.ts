@@ -69,7 +69,6 @@ IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly ra
 - TSI / TVR codes → randomize the hex/digit values
 - Terminal IDs, POS IDs, Kassör/cashier numbers → randomize digits
 - Barcode number printed below the barcode → randomize all digits keeping exact same length
-- Card number last 4 digits → randomize (e.g. ****1234 → ****7291)
 - Any other alphanumeric string that looks like a unique transaction or device identifier
 Each replacement MUST match the exact same character format and length as the original.
 No two generations of the same receipt should share any traceable code.
@@ -77,6 +76,8 @@ No two generations of the same receipt should share any traceable code.
 DO NOT ADD any letters, codes, or labels (A, B, C, etc.) next to item names that were not already there in the original image. Do not modify or remove VAT category letters that already exist on the receipt.
 
 DO NOT TOUCH (leave exactly as-is):
+- Card number or masked card number (e.g. **** **** **** 1234) — keep last 4 digits exactly as-is
+- Bank name, card type (Visa, Mastercard, etc.)
 - Store name, merchant name, logo
 - Organization number / Org.nr / VAT number
 - Store address, phone number, website
