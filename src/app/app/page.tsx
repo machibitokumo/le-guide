@@ -86,6 +86,21 @@ export default function AppPage() {
       {/* Wizard */}
       <ReceiptWizard onGenerated={handleGenerated} />
 
+      {/* Warning disclaimer */}
+      <div className="w-full max-w-2xl mx-auto px-4 pt-10 pb-24 flex flex-col items-center gap-2">
+        <div className="flex items-start gap-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-4 py-3">
+          <span
+            className="text-yellow-400 text-lg mt-0.5 shrink-0"
+            style={{ filter: "drop-shadow(0 0 6px rgba(234,179,8,0.8)) drop-shadow(0 0 12px rgba(234,179,8,0.4))", animation: "pulse 2s ease-in-out infinite" }}
+          >
+            ⚠
+          </span>
+          <p className="text-[11px] font-mono text-foreground/40 leading-relaxed">
+            この画像を会社の帳簿・経費申請・確定申告などの公式書類として使用することを固く禁じます。本サービスは個人的な用途のみを対象としています。
+          </p>
+        </div>
+      </div>
+
       {/* Add to Home Screen */}
       <AddToHomeScreen />
 
