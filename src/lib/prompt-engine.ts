@@ -36,6 +36,13 @@ function buildItemMap(structure: ReceiptStructure, goingDown: boolean): string {
   return `\nITEM MAP (derived from OCR — use this as your editing guide):\n${lines.join("\n")}`;
 }
 
+function randomTime(): string {
+  const h = 9 + Math.floor(Math.random() * 12);
+  const m = Math.floor(Math.random() * 60);
+  const s = Math.floor(Math.random() * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export function buildEditPrompt(opts: {
   targetTotal: number;
   date: string;
@@ -53,13 +60,29 @@ export function buildEditPrompt(opts: {
     ? "Every item change MUST reduce a line total — do NOT raise any individual price or quantity."
     : "Every item change MUST increase a line total — do NOT lower any individual price or quantity.";
   const itemMap = opts.receiptStructure ? buildItemMap(opts.receiptStructure, goingDown) : "";
+  const time = randomTime();
 
   return `You are a receipt image editor.
 
 TASK: Edit this receipt photo. Change ONLY these values:
 - Total/sum: change to ${targetStr} (this is ${direction} than the original${opts.originalTotal ? ` of ${opts.originalTotal.toFixed(2)}` : ""})
 - Date: change to ${opts.date}
+- Time: change to ${time}
+- All unique identifier codes — see IDENTIFIER RULES below
 ${itemMap}
+
+IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly randomized value:
+- Receipt / kvitto numbers (e.g. "252200-001-96396") → new number, same format and length
+- Long hex/alphanumeric hash strings (e.g. "71cdbfac-03ff-42ae-ad9b-aa2bd36dddcc") → new random hex in same format
+- Reference numbers (Refnr, Ref.nr, Kontrollnr, Auth, Approval code, etc.) → randomize digits
+- AID codes (e.g. "A0000000041010") → keep prefix "A000000" randomize the remaining digits
+- TSI / TVR codes → randomize the hex/digit values
+- Terminal IDs, POS IDs, Kassör/cashier numbers → randomize digits
+- Barcode number printed below the barcode → randomize all digits keeping exact same length
+- Card number last 4 digits → randomize (e.g. ****1234 → ****7291)
+- Any other alphanumeric string that looks like a unique transaction or device identifier
+Each replacement MUST match the exact same character format and length as the original.
+No two generations of the same receipt should share any traceable code.
 
 CRITICAL RULES FOR ADJUSTING THE TOTAL:
 1. NEVER add new products, NEVER remove existing products, NEVER add new lines to the receipt.
