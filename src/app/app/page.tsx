@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import ReceiptWizard from "@/components/ReceiptWizard";
+import AddToHomeScreen from "@/components/AddToHomeScreen";
 
 function formatSEK(amount: number): string {
   return amount.toLocaleString("sv-SE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kr";
@@ -84,6 +85,9 @@ export default function AppPage() {
 
       {/* Wizard */}
       <ReceiptWizard onGenerated={handleGenerated} />
+
+      {/* Add to Home Screen */}
+      <AddToHomeScreen />
 
       {/* Library overlay */}
       {showLibrary && (

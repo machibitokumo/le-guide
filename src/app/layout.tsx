@@ -11,14 +11,20 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Le Guide",
   description: "AI-powered image editing",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Le Guide",
+  },
   openGraph: {
     title: "Le Guide",
     description: "AI-powered image editing",
     images: [{ url: "/og-image.png", width: 1200, height: 630 }],
   },
   icons: {
-    icon: "/icon.png",
-    apple: "/apple-icon.png",
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
   },
 };
 
