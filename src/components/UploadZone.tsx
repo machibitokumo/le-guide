@@ -85,9 +85,6 @@ export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
         ) : (
           <div className="space-y-3 py-8">
             <div className="text-4xl opacity-30">&#x1f4f7;</div>
-            <p className="text-foreground/70 text-sm">
-              Drop a receipt image here or click to browse
-            </p>
             <p className="text-foreground/30 text-xs">JPEG or PNG, max 10 MB</p>
           </div>
         )}

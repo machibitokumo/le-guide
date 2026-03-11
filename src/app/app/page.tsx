@@ -58,7 +58,7 @@ export default function AppPage() {
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-tight font-mono">Le Guide</h1>
             <p className="text-foreground/30 text-xs font-mono mt-1">
-              Brought to you by 見えない技術クラウド
+              見えない技術クラウド
             </p>
           </div>
 

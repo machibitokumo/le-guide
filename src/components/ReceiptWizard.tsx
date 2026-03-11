@@ -49,7 +49,7 @@ function reducer(state: PipelineState, action: Action): PipelineState {
 }
 
 const STEP_LABELS: Record<string, string> = {
-  idle: "Upload a receipt",
+  idle: "",
   uploading: "Analyzing receipt...",
   targeting: "Set target",
   generating: "Generating edited receipt...",
