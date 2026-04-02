@@ -99,7 +99,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "OCR request failed");
       }
 
@@ -137,7 +137,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Image edit failed");
       }
 
@@ -164,7 +164,7 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
     if (state.step !== "done" || state.saved || saving) return;
     setSaving(true);
     try {
-      await fetch("/api/save", {
+      const res = await fetch("/api/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -174,18 +174,24 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
           date: state.date,
         }),
       });
-      dispatch({ type: "SET_SAVED" });
+      if (res.ok) dispatch({ type: "SET_SAVED" });
+    } catch {
+      // network error — user can retry
     } finally {
       setSaving(false);
     }
   };
 
   const handleDiscard = async () => {
-    await fetch("/api/log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "discard" }),
-    });
+    try {
+      await fetch("/api/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "discard" }),
+      });
+    } catch {
+      // log failure is non-critical
+    }
     handleRestart();
   };
 

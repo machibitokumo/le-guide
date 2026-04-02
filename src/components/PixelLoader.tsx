@@ -29,6 +29,8 @@ export default function PixelLoader({
   const explodeAt  = useRef<number | null>(null);
   const particles  = useRef<{ x: number; y: number; vx: number; vy: number }[]>([]);
   const fired      = useRef(false);
+  const onExplodeDoneRef = useRef(onExplodeDone);
+  onExplodeDoneRef.current = onExplodeDone;
 
   // Sync done flag
   useEffect(() => {
@@ -109,7 +111,7 @@ export default function PixelLoader({
       const alpha = Math.max(0, 1 - et / 28);
 
       if (alpha <= 0) {
-        if (!fired.current) { fired.current = true; onExplodeDone?.(); }
+        if (!fired.current) { fired.current = true; onExplodeDoneRef.current?.(); }
         return; // stop loop
       }
 
@@ -124,7 +126,8 @@ export default function PixelLoader({
 
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
-  }, [onExplodeDone]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <canvas

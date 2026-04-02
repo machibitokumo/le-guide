@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import NoContextMenu from "@/components/NoContextMenu";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -37,7 +38,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <NoContextMenu>{children}</NoContextMenu>
+        <ErrorBoundary>
+          <NoContextMenu>{children}</NoContextMenu>
+        </ErrorBoundary>
       </body>
     </html>
   );

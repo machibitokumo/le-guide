@@ -7,18 +7,22 @@ interface UploadZoneProps {
   disabled?: boolean;
 }
 
+const ACCEPTED_TYPES = /^(image\/(jpeg|png)|application\/pdf)$/;
+
 export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const prevUrlRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const validateAndUpload = useCallback(
-    (file: File) => {
+    async (file: File) => {
       setError(null);
 
-      if (!file.type.match(/^image\/(jpeg|png)$/)) {
-        setError("Only JPEG and PNG files are accepted.");
+      if (!ACCEPTED_TYPES.test(file.type)) {
+        setError("Only JPEG, PNG, and PDF files are accepted.");
         return;
       }
 
@@ -27,9 +31,27 @@ export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
         return;
       }
 
-      const url = URL.createObjectURL(file);
+      let imageFile = file;
+
+      if (file.type === "application/pdf") {
+        try {
+          setConverting(true);
+          const { pdfToImage } = await import("@/lib/pdf-to-image");
+          imageFile = await pdfToImage(file);
+        } catch {
+          setError("Failed to convert PDF. Try a JPEG or PNG instead.");
+          setConverting(false);
+          return;
+        } finally {
+          setConverting(false);
+        }
+      }
+
+      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+      const url = URL.createObjectURL(imageFile);
+      prevUrlRef.current = url;
       setPreview(url);
-      onUpload(file);
+      onUpload(imageFile);
     },
     [onUpload]
   );
@@ -63,17 +85,21 @@ export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
   return (
     <div className="w-full max-w-2xl mx-auto">
       <div
-        onClick={disabled ? undefined : handleClick}
-        onDrop={disabled ? undefined : handleDrop}
-        onDragOver={disabled ? undefined : handleDragOver}
-        onDragLeave={disabled ? undefined : handleDragLeave}
+        onClick={disabled || converting ? undefined : handleClick}
+        onDrop={disabled || converting ? undefined : handleDrop}
+        onDragOver={disabled || converting ? undefined : handleDragOver}
+        onDragLeave={disabled || converting ? undefined : handleDragLeave}
         className={`
           relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200
-          ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-accent"}
+          ${disabled || converting ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-accent"}
           ${isDragging ? "border-accent bg-accent/5 scale-[1.02]" : "border-border"}
         `}
       >
-        {preview ? (
+        {converting ? (
+          <div className="space-y-3 py-8">
+            <p className="text-foreground/50 text-xs font-mono animate-pulse">Converting PDF...</p>
+          </div>
+        ) : preview ? (
           <div className="space-y-4">
             <img
               src={preview}
@@ -85,14 +111,14 @@ export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
         ) : (
           <div className="space-y-3 py-8">
             <div className="text-4xl opacity-30">&#x1f4f7;</div>
-            <p className="text-foreground/30 text-xs">JPEG or PNG, max 10 MB</p>
+            <p className="text-foreground/30 text-xs">JPEG, PNG, or PDF — max 10 MB</p>
           </div>
         )}
 
         <input
           ref={inputRef}
           type="file"
-          accept="image/jpeg,image/png"
+          accept="image/jpeg,image/png,application/pdf"
           onChange={handleFileChange}
           className="hidden"
         />

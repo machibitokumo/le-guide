@@ -24,19 +24,25 @@ export default function AppPage() {
 
   useEffect(() => {
     fetch("/api/stats")
-      .then(r => r.json())
-      .then(d => setAccumulated(d.accumulated_total ?? 0));
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => setAccumulated(d.accumulated_total ?? 0))
+      .catch(() => setAccumulated(0));
   }, []);
 
   const handleGenerated = async (_total: number, apiCostUSD: number) => {
-    // Store in USD; display converts to SEK
-    const res = await fetch("/api/stats", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: apiCostUSD }),
-    });
-    const data = await res.json();
-    setAccumulated(data.accumulated_total ?? 0);
+    try {
+      const res = await fetch("/api/stats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: apiCostUSD }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAccumulated(data.accumulated_total ?? 0);
+      }
+    } catch {
+      // stats update failure is non-critical
+    }
   };
 
   // accumulated is USD; convert to SEK (configurable via NEXT_PUBLIC_SEK_RATE), then ×2 markup
@@ -71,8 +77,9 @@ export default function AppPage() {
                 setShowLibrary(true);
                 setLibraryLoading(true);
                 fetch("/api/library")
-                  .then(r => r.json())
+                  .then(r => r.ok ? r.json() : Promise.reject())
                   .then(d => setReceipts(d.receipts ?? []))
+                  .catch(() => setReceipts([]))
                   .finally(() => setLibraryLoading(false));
               }}
               className="flex flex-col items-center gap-1 opacity-50 hover:opacity-100 transition-opacity"

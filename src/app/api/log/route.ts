@@ -5,7 +5,13 @@ export async function POST(req: Request) {
   const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { action, metadata } = await req.json();
+  let body: { action?: string; metadata?: Record<string, unknown> };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { action, metadata } = body;
   if (!action) return Response.json({ error: "Missing action" }, { status: 400 });
 
   const supabase = createClient(

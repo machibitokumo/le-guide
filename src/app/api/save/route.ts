@@ -6,7 +6,16 @@ export async function POST(req: Request) {
   const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { originalImageUrl, editedImageUrl, targetTotal, date } = await req.json();
+  let body: { originalImageUrl?: string; editedImageUrl?: string; targetTotal?: number; date?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { originalImageUrl, editedImageUrl, targetTotal, date } = body;
+  if (!originalImageUrl || !editedImageUrl) {
+    return Response.json({ error: "Missing image data" }, { status: 400 });
+  }
 
   const supabase = createClient(
     process.env.leguide_SUPABASE_URL!,

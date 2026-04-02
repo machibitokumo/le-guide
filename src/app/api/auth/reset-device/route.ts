@@ -9,7 +9,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { username } = await req.json();
+  let body: { username?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { username } = body;
   if (!username) return Response.json({ error: "Missing username" }, { status: 400 });
 
   const supabase = createClient(

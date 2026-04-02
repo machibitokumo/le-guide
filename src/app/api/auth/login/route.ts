@@ -16,6 +16,16 @@ function isRateLimited(key: string): boolean {
   if (attempts.length >= RATE_MAX) return true;
   attempts.push(now);
   rateStore.set(key, attempts);
+
+  // Prune expired keys periodically (every 50 calls)
+  if (rateStore.size > 50) {
+    for (const [k, v] of rateStore) {
+      const live = v.filter(t => now - t < RATE_WINDOW_MS);
+      if (live.length === 0) rateStore.delete(k);
+      else rateStore.set(k, live);
+    }
+  }
+
   return false;
 }
 
@@ -54,7 +64,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { username, password, deviceFingerprint } = await req.json();
+  let body: { username?: string; password?: string; deviceFingerprint?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { username, password, deviceFingerprint } = body;
   if (!username || !password) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }

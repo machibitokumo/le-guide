@@ -29,31 +29,46 @@ export async function POST(req: Request) {
   const username = await getSessionUsername();
   if (!username) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { amount } = await req.json();
+  let body: { amount?: number };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { amount } = body;
   if (typeof amount !== "number" || amount <= 0) {
     return Response.json({ error: "Invalid amount" }, { status: 400 });
   }
 
   const supabase = getSupabase();
 
-  // Fetch current value (or 0 if first time)
-  const { data: current } = await supabase
-    .from("user_stats")
-    .select("accumulated_total")
-    .eq("username", username)
-    .maybeSingle();
+  // Atomic increment via upsert — avoids read-then-write race condition
+  // First try to increment existing row
+  const { data: updated, error: updateErr } = await supabase.rpc("increment_user_stat", {
+    p_username: username,
+    p_amount: amount,
+  });
 
-  const newTotal = Number(current?.accumulated_total ?? 0) + amount;
+  if (updateErr) {
+    // Fallback: if the RPC doesn't exist, use the old upsert approach
+    const { data: current } = await supabase
+      .from("user_stats")
+      .select("accumulated_total")
+      .eq("username", username)
+      .maybeSingle();
 
-  // Upsert with new total
-  const { error } = await supabase
-    .from("user_stats")
-    .upsert(
-      { username, accumulated_total: newTotal, updated_at: new Date().toISOString() },
-      { onConflict: "username" }
-    );
+    const newTotal = Number(current?.accumulated_total ?? 0) + amount;
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+    const { error } = await supabase
+      .from("user_stats")
+      .upsert(
+        { username, accumulated_total: newTotal, updated_at: new Date().toISOString() },
+        { onConflict: "username" }
+      );
 
-  return Response.json({ accumulated_total: newTotal });
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ accumulated_total: newTotal });
+  }
+
+  return Response.json({ accumulated_total: updated });
 }

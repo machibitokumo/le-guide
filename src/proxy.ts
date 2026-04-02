@@ -18,7 +18,9 @@ async function verifySession(token: string): Promise<boolean> {
     ["verify"]
   );
 
-  const sigBytes = new Uint8Array(sigHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+  const hexPairs = sigHex.match(/.{2}/g);
+  if (!hexPairs) return false;
+  const sigBytes = new Uint8Array(hexPairs.map(b => parseInt(b, 16)));
   const dataBytes = new TextEncoder().encode(username);
 
   return crypto.subtle.verify("HMAC", key, sigBytes, dataBytes);
