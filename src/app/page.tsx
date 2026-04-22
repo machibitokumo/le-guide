@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,14 +9,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const fingerprintRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    FingerprintJS.load()
-      .then(fp => fp.get())
-      .then(result => { fingerprintRef.current = result.visitorId; })
-      .catch(() => {});
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,15 +19,21 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, deviceFingerprint: fingerprintRef.current }),
+        body: JSON.stringify({ username, password }),
       });
 
-      if (!res.ok) {
-        setError("Invalid credentials");
+      if (res.ok) {
+        router.push("/app");
         return;
       }
 
-      router.push("/app");
+      if (res.status === 403) {
+        setError("This account is locked to a different device. Contact the admin to reset.");
+      } else if (res.status === 429) {
+        setError("Too many attempts. Try again later.");
+      } else {
+        setError("Invalid credentials");
+      }
     } catch {
       setError("Something went wrong");
     } finally {

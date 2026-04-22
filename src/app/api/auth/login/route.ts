@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scryptSync, timingSafeEqual } from "crypto";
+import { scryptSync, timingSafeEqual, randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { signToken } from "@/lib/session";
 
@@ -31,6 +31,9 @@ function isRateLimited(key: string): boolean {
 
 // ---------------------------------------------------------------------------
 
+const DEVICE_COOKIE = "device_id";
+const DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 * 2; // 2 years
+
 function verifyPassword(password: string, hash: string, salt: string): boolean {
   try {
     const derived = scryptSync(password, salt, 64);
@@ -50,6 +53,16 @@ function setSessionCookie(res: NextResponse, username: string) {
   });
 }
 
+function setDeviceCookie(res: NextResponse, deviceId: string) {
+  res.cookies.set(DEVICE_COOKIE, deviceId, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: DEVICE_COOKIE_MAX_AGE,
+  });
+}
+
 export async function POST(req: NextRequest) {
   // Rate limit by IP
   const ip =
@@ -64,13 +77,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { username?: string; password?: string; deviceFingerprint?: string };
+  let body: { username?: string; password?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
-  const { username, password, deviceFingerprint } = body;
+  const { username, password } = body;
   if (!username || !password) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
@@ -103,22 +116,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
+  const deviceCookie = req.cookies.get(DEVICE_COOKIE)?.value ?? null;
+
   if (user.device_fingerprint) {
-    if (user.device_fingerprint !== deviceFingerprint) {
+    // Locked account — cookie must match the stored token exactly.
+    if (!deviceCookie || deviceCookie !== user.device_fingerprint) {
       return NextResponse.json(
         { error: "Account locked to a different device" },
         { status: 403 }
       );
     }
-  } else if (deviceFingerprint) {
-    // First login — lock the account to this device
-    await supabase
-      .from("users")
-      .update({ device_fingerprint: deviceFingerprint })
-      .eq("username", username);
+    const res = NextResponse.json({ ok: true });
+    setSessionCookie(res, username);
+    return res;
   }
+
+  // First login (or admin-reset) — mint a new device token and lock to it.
+  const newDeviceId = randomUUID();
+  await supabase
+    .from("users")
+    .update({ device_fingerprint: newDeviceId })
+    .eq("username", username);
 
   const res = NextResponse.json({ ok: true });
   setSessionCookie(res, username);
+  setDeviceCookie(res, newDeviceId);
   return res;
 }
