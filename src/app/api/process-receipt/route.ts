@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { cleanImage, getImageDimensions, extractExif } from "@/lib/clean-image";
+import { cleanImage, getImageDimensions, extractExif, detectFormat } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import { createClient } from "@supabase/supabase-js";
@@ -37,6 +37,24 @@ export async function POST(req: NextRequest) {
     }
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
+
+    const format = detectFormat(rawBuffer);
+    if (format === "heic") {
+      return NextResponse.json(
+        {
+          error:
+            "iPhone HEIC images aren't supported. In Settings → Camera → Formats, choose 'Most Compatible' and retake the photo, or share the receipt as a JPEG.",
+        },
+        { status: 415 }
+      );
+    }
+    if (format !== "jpeg" && format !== "png") {
+      return NextResponse.json(
+        { error: "Unsupported image format. Please upload a JPEG or PNG." },
+        { status: 415 }
+      );
+    }
+
     const [{ width, height }, originalExifBuffer] = await Promise.all([
       getImageDimensions(rawBuffer),
       extractExif(rawBuffer),

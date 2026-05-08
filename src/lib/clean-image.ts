@@ -7,6 +7,28 @@ export interface CleanedImage {
   mimeType: "image/jpeg";
 }
 
+const HEIC_BRANDS = new Set(["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"]);
+
+export type DetectedFormat = "jpeg" | "png" | "heic" | "pdf" | "unknown";
+
+export function detectFormat(buffer: Buffer): DetectedFormat {
+  if (buffer.length < 12) return "unknown";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpeg";
+  if (
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
+  ) return "png";
+  if (
+    buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46
+  ) return "pdf";
+  if (
+    buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70
+  ) {
+    const brand = buffer.toString("ascii", 8, 12);
+    if (HEIC_BRANDS.has(brand)) return "heic";
+  }
+  return "unknown";
+}
+
 export async function cleanImage(input: Buffer): Promise<CleanedImage> {
   const quality = Math.floor(Math.random() * 11) + 82; // 82-92
 
