@@ -5,9 +5,15 @@ import { cleanImage, injectExif } from "@/lib/clean-image";
 import { reconcile } from "@/lib/silent-ledger";
 import { buildEditPrompt } from "@/lib/prompt-engine";
 import { getUserApiKey } from "@/lib/get-user-api-key";
+import { getSessionUsername } from "@/lib/session";
 import type { OCRResult, ReceiptStructure } from "@/types/receipt";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
+  let targetTotalForLog: number | undefined;
+  let dateForLog: string | undefined;
   try {
     const { apiKey, username } = await getUserApiKey();
     const ai = new GoogleGenAI({ apiKey });
@@ -22,6 +28,9 @@ export async function POST(req: NextRequest) {
       originalFilename: string;
       originalExif: string | null;
     };
+
+    targetTotalForLog = body.targetTotal;
+    dateForLog = body.date;
 
     if (!body.imageUrl || !body.ocrResult || !body.targetTotal || !body.date) {
       return NextResponse.json(
@@ -110,6 +119,23 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[edit-image] failed:", err);
+    try {
+      const username = await getSessionUsername();
+      if (username) {
+        const supabase = createClient(
+          process.env.leguide_SUPABASE_URL!,
+          process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
+        );
+        await supabase.from("activity_log").insert({
+          username,
+          action: "generate_error",
+          metadata: { error: message, target_total: targetTotalForLog, date: dateForLog },
+        });
+      }
+    } catch (logErr) {
+      console.error("[edit-image] failed to log error:", logErr);
+    }
     return NextResponse.json({ error: `Image edit failed: ${message}` }, { status: 500 });
   }
 }

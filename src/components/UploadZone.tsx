@@ -47,6 +47,13 @@ export default function UploadZone({ onUpload, disabled }: UploadZoneProps) {
         }
       }
 
+      try {
+        const { compressImage } = await import("@/lib/compress-image");
+        imageFile = await compressImage(imageFile);
+      } catch {
+        // compression is best-effort — fall back to the original file
+      }
+
       if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
       const url = URL.createObjectURL(imageFile);
       prevUrlRef.current = url;

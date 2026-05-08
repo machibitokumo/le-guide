@@ -5,16 +5,24 @@ import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
 import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import { createClient } from "@supabase/supabase-js";
 import { getUserApiKey } from "@/lib/get-user-api-key";
+import { getSessionUsername } from "@/lib/session";
 import type { OCRItem, OCRResult } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
+  let fileSize: number | undefined;
+  let fileType: string | undefined;
   try {
     const { apiKey, username } = await getUserApiKey();
     const ai = new GoogleGenAI({ apiKey });
 
     const formData = await req.formData();
     const file = formData.get("receipt") as File | null;
+    fileSize = file?.size;
+    fileType = file?.type;
 
     if (!file) {
       return NextResponse.json({ error: "No receipt image provided" }, { status: 400 });
@@ -128,6 +136,23 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[process-receipt] OCR failed:", err);
+    try {
+      const username = await getSessionUsername();
+      if (username) {
+        const supabase = createClient(
+          process.env.leguide_SUPABASE_URL!,
+          process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
+        );
+        await supabase.from("activity_log").insert({
+          username,
+          action: "upload_error",
+          metadata: { error: message, file_size: fileSize, mime_type: fileType },
+        });
+      }
+    } catch (logErr) {
+      console.error("[process-receipt] failed to log error:", logErr);
+    }
     return NextResponse.json({ error: `OCR failed: ${message}` }, { status: 500 });
   }
 }

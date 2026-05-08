@@ -76,6 +76,17 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
 
   const isLoading = state.step === "uploading" || state.step === "generating";
 
+  const logClientError = (action: string, metadata: Record<string, unknown>) => {
+    fetch("/api/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, metadata }),
+      keepalive: true,
+    }).catch(() => {
+      // log failure is non-critical
+    });
+  };
+
   // Drive loader phase from step transitions
   useEffect(() => {
     if (isLoading) {
@@ -114,10 +125,14 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
         originalExif: data.originalExif ?? null,
       });
     } catch (err) {
-      dispatch({
-        type: "UPLOAD_ERROR",
-        message: err instanceof Error ? err.message : "Upload failed",
+      const message = err instanceof Error ? err.message : "Upload failed";
+      logClientError("client_upload_error", {
+        message,
+        file_size: file.size,
+        mime_type: file.type,
+        file_name: file.name,
       });
+      dispatch({ type: "UPLOAD_ERROR", message });
     }
   };
 
@@ -153,10 +168,9 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
       });
       onGenerated?.(total, ocrCostRef.current + (data.apiCostUSD ?? 0));
     } catch (err) {
-      dispatch({
-        type: "ERROR",
-        message: err instanceof Error ? err.message : "Generation failed",
-      });
+      const message = err instanceof Error ? err.message : "Generation failed";
+      logClientError("client_generate_error", { message, target_total: total, date });
+      dispatch({ type: "ERROR", message });
     }
   };
 
@@ -174,9 +188,15 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
           date: state.date,
         }),
       });
-      if (res.ok) dispatch({ type: "SET_SAVED" });
-    } catch {
-      // network error — user can retry
+      if (res.ok) {
+        dispatch({ type: "SET_SAVED" });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        logClientError("client_save_error", { message: err.error ?? `HTTP ${res.status}` });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Save failed";
+      logClientError("client_save_error", { message });
     } finally {
       setSaving(false);
     }
