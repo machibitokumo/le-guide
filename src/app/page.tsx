@@ -27,9 +27,7 @@ export default function LoginPage() {
         return;
       }
 
-      if (res.status === 403) {
-        setError("This account is locked to a different device. Contact the admin to reset.");
-      } else if (res.status === 429) {
+      if (res.status === 429) {
         setError("Too many attempts. Try again later.");
       } else {
         setError("Invalid credentials");

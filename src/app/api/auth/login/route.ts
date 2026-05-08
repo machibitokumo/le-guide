@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scryptSync, timingSafeEqual, randomUUID } from "crypto";
+import { scryptSync, timingSafeEqual } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { signToken } from "@/lib/session";
 
-// ---------------------------------------------------------------------------
-// Rate limiter — best-effort in serverless; protects within a single instance
-// ---------------------------------------------------------------------------
 const rateStore = new Map<string, number[]>();
 const RATE_MAX = 10;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -17,7 +14,6 @@ function isRateLimited(key: string): boolean {
   attempts.push(now);
   rateStore.set(key, attempts);
 
-  // Prune expired keys periodically (every 50 calls)
   if (rateStore.size > 50) {
     for (const [k, v] of rateStore) {
       const live = v.filter(t => now - t < RATE_WINDOW_MS);
@@ -28,11 +24,6 @@ function isRateLimited(key: string): boolean {
 
   return false;
 }
-
-// ---------------------------------------------------------------------------
-
-const DEVICE_COOKIE = "device_id";
-const DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 * 2; // 2 years
 
 function verifyPassword(password: string, hash: string, salt: string): boolean {
   try {
@@ -53,21 +44,23 @@ function setSessionCookie(res: NextResponse, username: string) {
   });
 }
 
-function setDeviceCookie(res: NextResponse, deviceId: string) {
-  res.cookies.set(DEVICE_COOKIE, deviceId, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: DEVICE_COOKIE_MAX_AGE,
-  });
-}
-
 function getSupabase(): SupabaseClient {
   return createClient(
     process.env.leguide_SUPABASE_URL!,
     process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
   );
+}
+
+function deviceInfo(req: NextRequest, ip: string): Record<string, unknown> {
+  return {
+    ip,
+    user_agent: req.headers.get("user-agent") ?? null,
+    accept_language: req.headers.get("accept-language") ?? null,
+    sec_ch_ua: req.headers.get("sec-ch-ua") ?? null,
+    sec_ch_ua_mobile: req.headers.get("sec-ch-ua-mobile") ?? null,
+    sec_ch_ua_platform: req.headers.get("sec-ch-ua-platform") ?? null,
+    referer: req.headers.get("referer") ?? null,
+  };
 }
 
 async function logLogin(
@@ -85,14 +78,14 @@ async function logLogin(
 export async function POST(req: NextRequest) {
   const supabase = getSupabase();
 
-  // Rate limit by IP
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
     "unknown";
+  const device = deviceInfo(req, ip);
 
   if (isRateLimited(ip)) {
-    await logLogin(supabase, "(unknown)", "login_fail", { reason: "rate_limited", ip });
+    await logLogin(supabase, "(unknown)", "login_fail", { ...device, reason: "rate_limited" });
     return NextResponse.json(
       { error: "Too many attempts. Try again later." },
       { status: 429 }
@@ -103,16 +96,15 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    await logLogin(supabase, "(unknown)", "login_fail", { reason: "bad_request", ip });
+    await logLogin(supabase, "(unknown)", "login_fail", { ...device, reason: "bad_request" });
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const { username, password } = body;
   if (!username || !password) {
-    await logLogin(supabase, username ?? "(unknown)", "login_fail", { reason: "missing_fields", ip });
+    await logLogin(supabase, username ?? "(unknown)", "login_fail", { ...device, reason: "missing_fields" });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  // Admin — no device lock; requires env vars to be explicitly set
   if (
     process.env.ADMIN_USERNAME &&
     process.env.ADMIN_PASSWORD &&
@@ -121,57 +113,27 @@ export async function POST(req: NextRequest) {
   ) {
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, username);
-    await logLogin(supabase, username, "login_success", { admin: true, ip });
+    await logLogin(supabase, username, "login_success", { ...device, admin: true });
     return res;
   }
 
-  // Check Supabase users table
   const { data: user } = await supabase
     .from("users")
-    .select("username, password_hash, salt, device_fingerprint")
+    .select("username, password_hash, salt")
     .eq("username", username)
     .maybeSingle();
 
   if (!user) {
-    await logLogin(supabase, username, "login_fail", { reason: "no_user", ip });
+    await logLogin(supabase, username, "login_fail", { ...device, reason: "no_user" });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
   if (!verifyPassword(password, user.password_hash, user.salt)) {
-    await logLogin(supabase, username, "login_fail", { reason: "wrong_password", ip });
+    await logLogin(supabase, username, "login_fail", { ...device, reason: "wrong_password" });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const deviceCookie = req.cookies.get(DEVICE_COOKIE)?.value ?? null;
-
-  if (user.device_fingerprint) {
-    // Locked account — cookie must match the stored token exactly.
-    if (!deviceCookie || deviceCookie !== user.device_fingerprint) {
-      await logLogin(supabase, username, "login_fail", {
-        reason: "locked",
-        ip,
-        had_device_cookie: deviceCookie != null,
-      });
-      return NextResponse.json(
-        { error: "Account locked to a different device" },
-        { status: 403 }
-      );
-    }
-    const res = NextResponse.json({ ok: true });
-    setSessionCookie(res, username);
-    await logLogin(supabase, username, "login_success", { ip });
-    return res;
-  }
-
-  // First login (or admin-reset) — mint a new device token and lock to it.
-  const newDeviceId = randomUUID();
-  await supabase
-    .from("users")
-    .update({ device_fingerprint: newDeviceId })
-    .eq("username", username);
-
   const res = NextResponse.json({ ok: true });
   setSessionCookie(res, username);
-  setDeviceCookie(res, newDeviceId);
-  await logLogin(supabase, username, "login_success", { ip, first_login: true });
+  await logLogin(supabase, username, "login_success", device);
   return res;
 }

@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { cleanImage, getImageDimensions, extractExif, detectFormat } from "@/lib/clean-image";
 import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
-import { analyzeReceiptStructure } from "@/lib/receipt-analyzer";
 import { createClient } from "@supabase/supabase-js";
 import { getUserApiKey } from "@/lib/get-user-api-key";
 import { getSessionUsername } from "@/lib/session";
-import type { OCRItem, OCRResult } from "@/types/receipt";
+import type { OCRItem, OCRResult, ReceiptStructure } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
@@ -124,14 +123,12 @@ export async function POST(req: NextRequest) {
       imageHeight: height,
     };
 
-    const { structure: receiptStructure, tokenCostUSD: analyzerCostUSD } = await analyzeReceiptStructure(ocrResult, apiKey);
+    const receiptStructure: ReceiptStructure = { items: [] };
 
-    // Calculate OCR token cost
     const ocrMeta = response.usageMetadata as Record<string, unknown> | undefined;
     const ocrInput = Number(ocrMeta?.promptTokenCount ?? ocrMeta?.inputTokenCount ?? 0);
     const ocrOutput = Number(ocrMeta?.candidatesTokenCount ?? ocrMeta?.outputTokenCount ?? 0);
-    const ocrCostUSD = (ocrInput * 0.15 + ocrOutput * 0.60) / 1_000_000;
-    const apiCostUSD = ocrCostUSD + analyzerCostUSD;
+    const apiCostUSD = (ocrInput * 0.15 + ocrOutput * 0.60) / 1_000_000;
 
     // Log upload event
     if (username) {
