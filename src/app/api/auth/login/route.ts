@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { scryptSync, timingSafeEqual, randomUUID } from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { signToken } from "@/lib/session";
 
 // ---------------------------------------------------------------------------
@@ -63,7 +63,30 @@ function setDeviceCookie(res: NextResponse, deviceId: string) {
   });
 }
 
+function getSupabase(): SupabaseClient {
+  return createClient(
+    process.env.leguide_SUPABASE_URL!,
+    process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
+function logLogin(
+  supabase: SupabaseClient,
+  username: string,
+  action: "login_success" | "login_fail",
+  metadata: Record<string, unknown>
+) {
+  supabase
+    .from("activity_log")
+    .insert({ username, action, metadata })
+    .then(({ error }) => {
+      if (error) console.error("[login] activity_log insert failed:", error.message);
+    });
+}
+
 export async function POST(req: NextRequest) {
+  const supabase = getSupabase();
+
   // Rate limit by IP
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -71,6 +94,7 @@ export async function POST(req: NextRequest) {
     "unknown";
 
   if (isRateLimited(ip)) {
+    logLogin(supabase, "(unknown)", "login_fail", { reason: "rate_limited", ip });
     return NextResponse.json(
       { error: "Too many attempts. Try again later." },
       { status: 429 }
@@ -81,10 +105,12 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
+    logLogin(supabase, "(unknown)", "login_fail", { reason: "bad_request", ip });
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const { username, password } = body;
   if (!username || !password) {
+    logLogin(supabase, username ?? "(unknown)", "login_fail", { reason: "missing_fields", ip });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -97,22 +123,23 @@ export async function POST(req: NextRequest) {
   ) {
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, username);
+    logLogin(supabase, username, "login_success", { admin: true, ip });
     return res;
   }
 
   // Check Supabase users table
-  const supabase = createClient(
-    process.env.leguide_SUPABASE_URL!,
-    process.env.leguide_SUPABASE_SERVICE_ROLE_KEY!
-  );
-
   const { data: user } = await supabase
     .from("users")
     .select("username, password_hash, salt, device_fingerprint")
     .eq("username", username)
     .maybeSingle();
 
-  if (!user || !verifyPassword(password, user.password_hash, user.salt)) {
+  if (!user) {
+    logLogin(supabase, username, "login_fail", { reason: "no_user", ip });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
+  if (!verifyPassword(password, user.password_hash, user.salt)) {
+    logLogin(supabase, username, "login_fail", { reason: "wrong_password", ip });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -121,6 +148,11 @@ export async function POST(req: NextRequest) {
   if (user.device_fingerprint) {
     // Locked account — cookie must match the stored token exactly.
     if (!deviceCookie || deviceCookie !== user.device_fingerprint) {
+      logLogin(supabase, username, "login_fail", {
+        reason: "locked",
+        ip,
+        had_device_cookie: deviceCookie != null,
+      });
       return NextResponse.json(
         { error: "Account locked to a different device" },
         { status: 403 }
@@ -128,6 +160,7 @@ export async function POST(req: NextRequest) {
     }
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, username);
+    logLogin(supabase, username, "login_success", { ip });
     return res;
   }
 
@@ -141,5 +174,6 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   setSessionCookie(res, username);
   setDeviceCookie(res, newDeviceId);
+  logLogin(supabase, username, "login_success", { ip, first_login: true });
   return res;
 }
