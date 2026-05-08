@@ -62,14 +62,27 @@ interface ReceiptWizardProps {
   onGenerated?: (targetTotal: number, apiCostUSD: number) => void;
 }
 
+function localDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function localTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
   const [state, dispatch] = useReducer(reducer, { step: "idle" });
   const [targetTotal, setTargetTotal] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState(() => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  });
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+
+  // Initialize date/time on the client only — SSR runs in UTC.
+  useEffect(() => {
+    setDate(localDate());
+    setTime(localTime());
+  }, []);
   const [saving, setSaving] = useState(false);
   const [loaderPhase, setLoaderPhase] = useState<"off" | "loading" | "done">("off");
   const ocrCostRef = useRef(0);
@@ -217,9 +230,8 @@ export default function ReceiptWizard({ onGenerated }: ReceiptWizardProps) {
 
   const handleRestart = () => {
     setTargetTotal("");
-    setDate(new Date().toISOString().slice(0, 10));
-    const now = new Date();
-    setTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
+    setDate(localDate());
+    setTime(localTime());
     dispatch({ type: "RESTART" });
   };
 
