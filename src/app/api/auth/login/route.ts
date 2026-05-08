@@ -70,18 +70,16 @@ function getSupabase(): SupabaseClient {
   );
 }
 
-function logLogin(
+async function logLogin(
   supabase: SupabaseClient,
   username: string,
   action: "login_success" | "login_fail",
   metadata: Record<string, unknown>
-) {
-  supabase
+): Promise<void> {
+  const { error } = await supabase
     .from("activity_log")
-    .insert({ username, action, metadata })
-    .then(({ error }) => {
-      if (error) console.error("[login] activity_log insert failed:", error.message);
-    });
+    .insert({ username, action, metadata });
+  if (error) console.error("[login] activity_log insert failed:", error.message);
 }
 
 export async function POST(req: NextRequest) {
@@ -94,7 +92,7 @@ export async function POST(req: NextRequest) {
     "unknown";
 
   if (isRateLimited(ip)) {
-    logLogin(supabase, "(unknown)", "login_fail", { reason: "rate_limited", ip });
+    await logLogin(supabase, "(unknown)", "login_fail", { reason: "rate_limited", ip });
     return NextResponse.json(
       { error: "Too many attempts. Try again later." },
       { status: 429 }
@@ -105,12 +103,12 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    logLogin(supabase, "(unknown)", "login_fail", { reason: "bad_request", ip });
+    await logLogin(supabase, "(unknown)", "login_fail", { reason: "bad_request", ip });
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const { username, password } = body;
   if (!username || !password) {
-    logLogin(supabase, username ?? "(unknown)", "login_fail", { reason: "missing_fields", ip });
+    await logLogin(supabase, username ?? "(unknown)", "login_fail", { reason: "missing_fields", ip });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -123,7 +121,7 @@ export async function POST(req: NextRequest) {
   ) {
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, username);
-    logLogin(supabase, username, "login_success", { admin: true, ip });
+    await logLogin(supabase, username, "login_success", { admin: true, ip });
     return res;
   }
 
@@ -135,11 +133,11 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (!user) {
-    logLogin(supabase, username, "login_fail", { reason: "no_user", ip });
+    await logLogin(supabase, username, "login_fail", { reason: "no_user", ip });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
   if (!verifyPassword(password, user.password_hash, user.salt)) {
-    logLogin(supabase, username, "login_fail", { reason: "wrong_password", ip });
+    await logLogin(supabase, username, "login_fail", { reason: "wrong_password", ip });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -148,7 +146,7 @@ export async function POST(req: NextRequest) {
   if (user.device_fingerprint) {
     // Locked account — cookie must match the stored token exactly.
     if (!deviceCookie || deviceCookie !== user.device_fingerprint) {
-      logLogin(supabase, username, "login_fail", {
+      await logLogin(supabase, username, "login_fail", {
         reason: "locked",
         ip,
         had_device_cookie: deviceCookie != null,
@@ -160,7 +158,7 @@ export async function POST(req: NextRequest) {
     }
     const res = NextResponse.json({ ok: true });
     setSessionCookie(res, username);
-    logLogin(supabase, username, "login_success", { ip });
+    await logLogin(supabase, username, "login_success", { ip });
     return res;
   }
 
@@ -174,6 +172,6 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   setSessionCookie(res, username);
   setDeviceCookie(res, newDeviceId);
-  logLogin(supabase, username, "login_success", { ip, first_login: true });
+  await logLogin(supabase, username, "login_success", { ip, first_login: true });
   return res;
 }
