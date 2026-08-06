@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { cleanImage, getImageDimensions, extractExif, detectFormat } from "@/lib/clean-image";
-import { buildOCRSystemPrompt } from "@/lib/prompt-engine";
+import { ocrReceipt } from "@/lib/qwen-vl";
 import { createClient } from "@supabase/supabase-js";
-import { getUserApiKey } from "@/lib/get-user-api-key";
 import { getSessionUsername } from "@/lib/session";
-import type { OCRItem, OCRResult, ReceiptStructure } from "@/types/receipt";
+import type { OCRItem, OCRItemType, OCRResult, ReceiptStructure } from "@/types/receipt";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
@@ -15,8 +13,7 @@ export async function POST(req: NextRequest) {
   let fileSize: number | undefined;
   let fileType: string | undefined;
   try {
-    const { apiKey, username } = await getUserApiKey();
-    const ai = new GoogleGenAI({ apiKey });
+    const username = await getSessionUsername();
 
     const formData = await req.formData();
     const file = formData.get("receipt") as File | null;
@@ -65,70 +62,29 @@ export async function POST(req: NextRequest) {
     const base64Image = cleaned.buffer.toString("base64");
     const dataUrl = `data:image/jpeg;base64,${base64Image}`;
 
-    // Call Gemini 2.0 Flash for OCR
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: buildOCRSystemPrompt() },
-            { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-            { text: "Extract all text from this receipt with bounding boxes. Return ONLY a JSON array." },
-          ],
-        },
-      ],
-    });
+    // OCR via Qwen-VL (DashScope). Wrapper normalizes types, clamps bboxes, parses values.
+    const qwen = await ocrReceipt(base64Image);
 
-    const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
-
-    // Parse the JSON response — strip markdown fences if present
-    let jsonStr = rawText.trim();
-    if (jsonStr.startsWith("```")) {
-      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-    }
-
-    let parsedItems: Array<{
-      text: string;
-      type: string;
-      confidence: number;
-      boundingBox: { x: number; y: number; width: number; height: number };
-      value?: number;
-    }>;
-
-    try {
-      parsedItems = JSON.parse(jsonStr);
-    } catch {
-      return NextResponse.json({ error: "OCR response could not be parsed" }, { status: 502 });
-    }
-
-    const items: OCRItem[] = parsedItems.map((item) => ({
+    const items: OCRItem[] = qwen.items.map((item) => ({
       id: randomUUID(),
       text: item.text,
-      type: (item.type as OCRItem["type"]) || "unknown",
-      confidence: item.confidence ?? 0.5,
-      boundingBox: {
-        x: Math.max(0, Math.min(1, item.boundingBox?.x ?? 0)),
-        y: Math.max(0, Math.min(1, item.boundingBox?.y ?? 0)),
-        width: Math.max(0, Math.min(1, item.boundingBox?.width ?? 0.1)),
-        height: Math.max(0, Math.min(1, item.boundingBox?.height ?? 0.03)),
-      },
+      type: item.type as OCRItemType,
+      confidence: item.confidence,
+      boundingBox: item.boundingBox,
       value: item.value,
     }));
 
     const ocrResult: OCRResult = {
       items,
-      rawText,
+      rawText: qwen.rawText,
       imageWidth: width,
       imageHeight: height,
     };
 
     const receiptStructure: ReceiptStructure = { items: [] };
 
-    const ocrMeta = response.usageMetadata as Record<string, unknown> | undefined;
-    const ocrInput = Number(ocrMeta?.promptTokenCount ?? ocrMeta?.inputTokenCount ?? 0);
-    const ocrOutput = Number(ocrMeta?.candidatesTokenCount ?? ocrMeta?.outputTokenCount ?? 0);
-    const apiCostUSD = (ocrInput * 0.15 + ocrOutput * 0.60) / 1_000_000;
+    // Cost is APPROXIMATE — formula carried over from Gemini; Qwen pricing differs and will be refined later.
+    const apiCostUSD = (qwen.usage.inputTokens * 0.15 + qwen.usage.outputTokens * 0.60) / 1_000_000;
 
     // Log upload event
     if (username) {
@@ -136,11 +92,17 @@ export async function POST(req: NextRequest) {
       await supabase.from("activity_log").insert({
         username,
         action: "upload",
-        metadata: { file_size: file.size, mime_type: file.type, image_width: width, image_height: height },
+        metadata: {
+          file_size: file.size,
+          mime_type: file.type,
+          image_width: width,
+          image_height: height,
+          doc_type: qwen.docType,
+          classifier_confidence: qwen.classifierConfidence,
+        },
       });
     }
 
-    // Return OCR result + structure + cleaned image + original file identity
     return NextResponse.json({
       ocr: ocrResult,
       receiptStructure,
@@ -148,6 +110,8 @@ export async function POST(req: NextRequest) {
       apiCostUSD,
       originalFilename,
       originalExif,
+      docType: qwen.docType,
+      classifierConfidence: qwen.classifierConfidence,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -25,6 +25,9 @@ export async function getUserApiKey(): Promise<{ apiKey: string; username: strin
     }
   }
 
-  // Fallback: shared key (admin or env var)
-  return { apiKey: process.env.leguide_GEMINI_API_KEY!, username };
+  const fallbackKey = process.env.leguide_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (!fallbackKey) {
+    throw new Error("No Gemini API key configured (set GEMINI_API_KEY or leguide_GEMINI_API_KEY)");
+  }
+  return { apiKey: fallbackKey, username };
 }

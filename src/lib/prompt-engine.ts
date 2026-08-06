@@ -1,4 +1,12 @@
-import type { ReceiptStructure } from "@/types/receipt";
+import type { OCRItem, OCRResult, ReceiptStructure } from "@/types/receipt";
+import {
+  FAKTURA_PROTECTED_FIELDS,
+  isFakturaTarget,
+  type EditOperation,
+  type EditPlan,
+  type EditTarget,
+  type FakturaTarget,
+} from "@/lib/document-types";
 
 
 function buildItemMap(structure: ReceiptStructure, goingDown: boolean): string {
@@ -116,28 +124,190 @@ VISUAL RULES:
 }
 
 export function buildOCRSystemPrompt(): string {
-  return `You are a receipt OCR specialist. Analyze the receipt image and extract ALL text with precise bounding box coordinates.
+  return `You are an OCR specialist for Swedish receipts (kvitto) and invoices (fakturor). Extract ALL text from the document with precise bounding box coordinates.
 
-For EVERY text region you detect, return a JSON object with:
+For each text region include:
 - "text": the exact text as it appears
-- "type": one of "item", "price", "total", "vat", "date", "org", "quantity", "unknown"
+- "type": tag describing the role of the text (the full type vocabulary and the exact output JSON shape are specified in the "Document classification" section that follows this prompt)
 - "confidence": 0-1 confidence score
-- "boundingBox": {"x": float, "y": float, "width": float, "height": float} where all values are NORMALIZED between 0 and 1 relative to the full image dimensions
+- "boundingBox": {"x": float, "y": float, "width": float, "height": float} — NORMALIZED between 0 and 1 relative to full image dimensions (x,y = top-left corner)
 - "value": numeric value if the text represents a number/price (parse "123,45" as 123.45)
 
-Rules for bounding boxes:
-- x,y is the TOP-LEFT corner of the text region
-- width,height are the dimensions of the text region
-- ALL values must be between 0 and 1 (normalized by image width/height)
-
-Rules for type classification:
-- "total": the final sum / total amount (look for "TOTALT", "ATT BETALA", "SUMMA", "TOTAL")
+Type-classification hints for receipt content:
+- "total": the final sum (look for "TOTALT", "ATT BETALA", "SUMMA", "TOTAL")
 - "vat": VAT/moms amounts and percentages
 - "price": individual line item prices (usually right-aligned)
 - "item": product/service names (usually left-aligned)
 - "quantity": quantities, counts, liters, kg
 - "date": dates in any format
-- "org": organization numbers, store IDs, receipt numbers
+- "org": store name, organization numbers, receipt numbers, terminal IDs
 
-Return ONLY a JSON array of objects. No markdown, no explanation.`;
+Invoice-specific type hints are listed in the section below. Output shape and remaining instructions also follow below.`;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  total: "totalsumma",
+  date: "datum",
+  time: "klockslag",
+  invoice_number: "fakturanummer",
+  invoice_date: "fakturadatum",
+  due_date: "förfallodatum",
+  payment_reference: "OCR-/betalreferens",
+  customer_name: "kundens namn",
+  customer_org_nr: "kundens organisationsnummer",
+  customer_address: "kundens adress",
+};
+
+export function humanizeFieldName(field: string): string {
+  return FIELD_LABELS[field] ?? field;
+}
+
+const PROTECTED_SELLER_LABELS: Record<(typeof FAKTURA_PROTECTED_FIELDS)[number], string> = {
+  seller_name: "Säljarens namn",
+  seller_org_nr: "Säljarens organisationsnummer",
+  seller_bankgiro: "Säljarens bankgiro",
+  seller_plusgiro: "Säljarens plusgiro",
+};
+
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+function findItemById(ocrResult: OCRResult, id: string): OCRItem | undefined {
+  return ocrResult.items.find(item => item.id === id);
+}
+
+function describeItem(item: OCRItem | undefined, fallbackId: string): string {
+  if (!item) return `[unknown line id=${fallbackId}]`;
+  return item.text;
+}
+
+function describeItemValue(item: OCRItem | undefined): string {
+  if (!item) return "unknown";
+  if (typeof item.value === "number") return formatNumber(item.value);
+  return item.text;
+}
+
+function operationToInstruction(op: EditOperation, ocrResult: OCRResult): string {
+  switch (op.op) {
+    case "MODIFY_ITEM": {
+      const item = findItemById(ocrResult, op.id);
+      const newValue = typeof op.newValue === "number" ? formatNumber(op.newValue) : op.newValue;
+      return `Change the ${op.field} of '${describeItem(item, op.id)}' to ${newValue}`;
+    }
+    case "MULTIPLY_QTY": {
+      const item = findItemById(ocrResult, op.id);
+      return `Multiply the quantity of '${describeItem(item, op.id)}' by ${op.factor} (current value: ${describeItemValue(item)})`;
+    }
+    case "ADD_ITEM": {
+      return `Add a new line: ${formatNumber(op.qty)} × ${op.name} @ ${formatNumber(op.unitPrice)} kr (VAT ${op.vatRate}%)`;
+    }
+    case "DELETE_ITEM": {
+      const item = findItemById(ocrResult, op.id);
+      return `Remove the line '${describeItem(item, op.id)}'`;
+    }
+    case "SET_FIELD": {
+      return `Set the ${humanizeFieldName(op.field)} to ${op.newValue}`;
+    }
+  }
+}
+
+function buildVatBlock(plan: EditPlan): string {
+  if (!plan.vatBreakdown.length) return "";
+  const rows = plan.vatBreakdown
+    .map(b => `- ${b.rate}%: ${b.gross.toFixed(2)} kr (varav moms ${b.vat.toFixed(2)} kr)`)
+    .join("\n");
+  return `\nFinal VAT breakdown to display:\n${rows}`;
+}
+
+function buildSellerProtectionBlock(): string {
+  const lines = FAKTURA_PROTECTED_FIELDS.map(
+    field => `- ${PROTECTED_SELLER_LABELS[field]} (${field})`,
+  ).join("\n");
+  return `\nDO NOT MODIFY (these seller fields must remain pixel-identical to the original):
+${lines}
+Leave every character of the seller block exactly as it appears on the original invoice.`;
+}
+
+function buildIdentifierRulesForKvitto(): string {
+  return `
+IDENTIFIER RULES — replace EVERY unique code on this receipt with a freshly randomized value:
+- Receipt / kvitto numbers → new number, same format and length
+- AID codes (e.g. "A0000000041010") → keep prefix "A000000", randomize the remaining digits
+- Barcode number printed below the barcode → randomize all digits keeping exact same length
+- Transaction IDs / long hex/alphanumeric hash strings → new random hex in same format
+Each replacement MUST match the exact same character format and length as the original.`;
+}
+
+function buildIdentifierRulesForFaktura(target: FakturaTarget): string {
+  const parts: string[] = [];
+  if (target.invoiceNumber === undefined) {
+    parts.push(
+      "- Invoice number (fakturanummer): randomize all digits, keep the exact same format and length as the original.",
+    );
+  } else {
+    parts.push(
+      `- Invoice number (fakturanummer): set to '${target.invoiceNumber}' exactly as specified by the user.`,
+    );
+  }
+  if (target.paymentReference === undefined) {
+    parts.push(
+      "- Payment reference / OCR number (OCR-/betalreferens): randomize all digits, keep the exact same format and length as the original.",
+    );
+  } else {
+    parts.push(
+      `- Payment reference / OCR number (OCR-/betalreferens): set to '${target.paymentReference}' exactly as specified by the user.`,
+    );
+  }
+  return `\nIDENTIFIER RULES (faktura):\n${parts.join("\n")}\nDo NOT randomize any other identifier on the invoice.`;
+}
+
+export function buildPlanPrompt(args: {
+  plan: EditPlan;
+  ocrResult: OCRResult;
+  target: EditTarget;
+}): string {
+  const { plan, ocrResult, target } = args;
+
+  const operationLines = plan.operations.length
+    ? plan.operations.map(op => `- ${operationToInstruction(op, ocrResult)}`).join("\n")
+    : "- (no line-level operations — only field updates)";
+
+  const vatBlock = buildVatBlock(plan);
+
+  const docTypeLabel = target.docType === "faktura" ? "invoice (faktura)" : "receipt (kvitto)";
+
+  const protectionBlock = isFakturaTarget(target) ? buildSellerProtectionBlock() : "";
+
+  const identifierBlock = isFakturaTarget(target)
+    ? buildIdentifierRulesForFaktura(target)
+    : buildIdentifierRulesForKvitto();
+
+  return `You are a ${docTypeLabel} image editor performing SURGICAL TEXT EDITS ONLY.
+
+ABSOLUTE OUTPUT REQUIREMENTS — these override everything else:
+- OUTPUT the image in the EXACT SAME ORIENTATION as the input (portrait stays portrait, landscape stays landscape). Do NOT rotate.
+- OUTPUT the EXACT SAME dimensions and crop. Do NOT zoom in, zoom out, or cut off any part of the image.
+- PRESERVE the EXACT SAME lighting, brightness, contrast, shadow, background, and image quality as the input photo.
+- PRESERVE the EXACT SAME font face, font size, font weight, character spacing, and line layout.
+- This is NOT a regeneration. You are NOT drawing a new ${docTypeLabel}. You are editing specific text values on the existing photo — everything else stays pixel-perfect identical.
+
+OPERATIONS — apply ONLY these edits, nothing else:
+${operationLines}
+${vatBlock}
+${protectionBlock}
+${identifierBlock}
+
+LINE CONSISTENCY RULES:
+- For every modified line, the four-tuple (description, unit price, quantity, line total) MUST stay arithmetically consistent: line_total = quantity × unit_price.
+- Do NOT add new lines unless an ADD_ITEM operation explicitly requests it.
+- Do NOT remove lines unless a DELETE_ITEM operation explicitly requests it.
+- Do NOT introduce extra labels, letters, or markers next to item names that were not already present in the original image.
+
+VISUAL RULES:
+- Keep the EXACT same document layout, branding, and font style.
+- Keep the EXACT same background, surface, lighting, shadows, and photo angle as the input.
+- Do NOT change the paper condition, color, or texture.
+- The edited values must match the font, size, weight, and spacing of the surrounding text.
+- The result must be indistinguishable from a photo of the original ${docTypeLabel}.`;
 }

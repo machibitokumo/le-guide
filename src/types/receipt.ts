@@ -5,7 +5,12 @@ export interface BoundingBox {
   height: number; // normalized 0-1
 }
 
-export type OCRItemType = "item" | "price" | "total" | "vat" | "date" | "org" | "quantity" | "unknown";
+export type OCRItemType =
+  | "item" | "price" | "total" | "vat" | "date" | "org" | "quantity" | "unknown"
+  | "invoice_number" | "invoice_date" | "due_date" | "payment_reference"
+  | "customer_name" | "customer_org_nr" | "customer_address"
+  | "seller_name" | "seller_org_nr" | "seller_bankgiro" | "seller_plusgiro"
+  | "line_description" | "line_unit_price" | "line_quantity" | "line_total";
 
 export interface OCRItem {
   id: string;
